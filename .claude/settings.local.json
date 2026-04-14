@@ -14,7 +14,8 @@
       "Bash(gh repo:*)",
       "Bash(brew list:*)",
       "Bash(gh auth:*)",
-      "Bash(pkill -f \"python3 /Users/veggar/Documents/work/second-by-claude-code/app.py\")"
+      "Bash(pkill -f \"python3 /Users/veggar/Documents/work/second-by-claude-code/app.py\")",
+      "Bash(python3 -c ':*)"
     ]
   }
 }
