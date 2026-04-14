@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, session
 from routes.auth import sheet_required, get_credentials
-from services.google_sheets import get_all_items
+from services.google_sheets import get_all_items, DEFAULT_WORKSHEET_NAME
 
 main_bp = Blueprint("main", __name__)
 
@@ -53,9 +53,10 @@ def _apply_filters_and_sort(items, query, scope, category_filter, watched_filter
 def index():
     credentials = get_credentials()
     sheet_id = session.get("sheet_id")
+    worksheet_name = session.get("worksheet_name", DEFAULT_WORKSHEET_NAME)
 
     try:
-        items = get_all_items(credentials, sheet_id)
+        items = get_all_items(credentials, sheet_id, worksheet_name)
         load_error = None
     except Exception as e:
         items = []

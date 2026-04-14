@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, request, session, redirect, url_for
-from routes.auth import sheet_required
+from routes.auth import sheet_required, get_credentials
+from services.google_sheets import rename_spreadsheet, rename_worksheet, DEFAULT_WORKSHEET_NAME
 
 settings_bp = Blueprint("settings", __name__)
 
@@ -18,6 +19,7 @@ SORT_OPTIONS_LABELS = {
 @settings_bp.route("/settings", methods=["GET", "POST"])
 @sheet_required
 def settings():
+    error = None
     if request.method == "POST":
         action = request.form.get("action")
         if action == "save_defaults":
@@ -27,17 +29,40 @@ def settings():
         elif action == "disconnect_sheet":
             session.pop("sheet_id", None)
             session.pop("sheet_title", None)
+            session.pop("worksheet_name", None)
             return redirect(url_for("sheet.connect"))
-        return redirect(url_for("settings.settings"))
+        elif action == "rename_doc":
+            new_title = request.form.get("new_doc_title", "").strip()
+            if new_title:
+                try:
+                    credentials = get_credentials()
+                    rename_spreadsheet(credentials, session["sheet_id"], new_title)
+                    session["sheet_title"] = new_title
+                except Exception as e:
+                    error = f"문서 이름 변경 실패: {e}"
+        elif action == "rename_worksheet":
+            new_ws = request.form.get("new_worksheet_name", "").strip()
+            if new_ws:
+                try:
+                    credentials = get_credentials()
+                    old_ws = session.get("worksheet_name", DEFAULT_WORKSHEET_NAME)
+                    rename_worksheet(credentials, session["sheet_id"], old_ws, new_ws)
+                    session["worksheet_name"] = new_ws
+                except Exception as e:
+                    error = f"워크시트 이름 변경 실패: {e}"
+        if not error:
+            return redirect(url_for("settings.settings"))
 
     return render_template(
         "settings.html",
         user=session.get("user"),
         sheet_title=session.get("sheet_title", ""),
         sheet_id=session.get("sheet_id", ""),
+        worksheet_name=session.get("worksheet_name", DEFAULT_WORKSHEET_NAME),
         default_sort=session.get("default_sort", "registered_desc"),
         default_category=session.get("default_category", "전체"),
         default_watched=session.get("default_watched", "all"),
         sort_options=SORT_OPTIONS_LABELS,
         categories=["전체", "영화", "드라마", "다큐", "애니", "기타"],
+        error=error,
     )

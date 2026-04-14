@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from googleapiclient.discovery import build
 
-WORKSHEET_NAME = "My Favorite Watch"
+DEFAULT_WORKSHEET_NAME = "My Favorite Watch"
 DELETED_WORKSHEET_NAME = "삭제"
 
 HEADERS = [
@@ -25,6 +25,33 @@ def extract_sheet_id(url: str) -> str | None:
     return match.group(1) if match else None
 
 
+def create_spreadsheet(credentials, doc_title: str, worksheet_name: str) -> dict:
+    """새 구글 시트 문서를 생성하고 워크시트를 초기화. sheet_id와 sheet_url 반환."""
+    service = _sheets_service(credentials)
+    body = {
+        "properties": {"title": doc_title},
+        "sheets": [{"properties": {"title": worksheet_name}}],
+    }
+    spreadsheet = service.spreadsheets().create(body=body).execute()
+    sheet_id = spreadsheet["spreadsheetId"]
+
+    # 헤더 추가
+    service.spreadsheets().values().update(
+        spreadsheetId=sheet_id,
+        range=f"'{worksheet_name}'!A1",
+        valueInputOption="RAW",
+        body={"values": [HEADERS]},
+    ).execute()
+
+    # 삭제 워크시트도 생성
+    ensure_worksheet(credentials, sheet_id, DELETED_WORKSHEET_NAME, DELETED_HEADERS)
+
+    return {
+        "sheet_id": sheet_id,
+        "sheet_url": f"https://docs.google.com/spreadsheets/d/{sheet_id}",
+    }
+
+
 def ensure_worksheet(credentials, sheet_id: str, worksheet_name: str, headers: list) -> str:
     """워크시트가 없으면 생성하고 헤더를 추가. 워크시트 GID 반환."""
     service = _sheets_service(credentials)
@@ -37,12 +64,10 @@ def ensure_worksheet(credentials, sheet_id: str, worksheet_name: str, headers: l
     if existing:
         return str(existing["properties"]["sheetId"])
 
-    # 워크시트 생성
     body = {"requests": [{"addSheet": {"properties": {"title": worksheet_name}}}]}
     response = service.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=body).execute()
     new_sheet_id = response["replies"][0]["addSheet"]["properties"]["sheetId"]
 
-    # 헤더 추가
     service.spreadsheets().values().update(
         spreadsheetId=sheet_id,
         range=f"'{worksheet_name}'!A1",
@@ -54,18 +79,108 @@ def ensure_worksheet(credentials, sheet_id: str, worksheet_name: str, headers: l
 
 
 def verify_sheet_access(credentials, sheet_id: str) -> dict:
-    """시트 접근 가능 여부 확인. 성공 시 시트 제목 반환."""
+    """시트 접근 가능 여부 확인. 성공 시 문서 제목과 워크시트 목록 반환."""
     service = _sheets_service(credentials)
     spreadsheet = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
-    return {"title": spreadsheet["properties"]["title"]}
+    worksheets = [s["properties"]["title"] for s in spreadsheet.get("sheets", [])]
+    return {
+        "title": spreadsheet["properties"]["title"],
+        "worksheets": worksheets,
+    }
 
 
-def get_all_items(credentials, sheet_id: str) -> list[dict]:
-    """My Favorite Watch 워크시트에서 모든 작품 조회."""
+def import_from_sheet(credentials, src_sheet_id: str, src_worksheet: str,
+                      dst_sheet_id: str, dst_worksheet: str) -> int:
+    """다른 구글 시트의 워크시트 데이터를 현재 시트로 가져오기. 가져온 행 수 반환."""
+    service = _sheets_service(credentials)
+
+    # 소스 데이터 읽기
+    result = service.spreadsheets().values().get(
+        spreadsheetId=src_sheet_id,
+        range=f"'{src_worksheet}'",
+    ).execute()
+    rows = result.get("values", [])
+    if len(rows) < 2:
+        return 0
+
+    src_header = rows[0]
+    data_rows = rows[1:]
+
+    # 대상 워크시트의 현재 헤더 확인
+    dst_result = service.spreadsheets().values().get(
+        spreadsheetId=dst_sheet_id,
+        range=f"'{dst_worksheet}'!1:1",
+    ).execute()
+    dst_header = dst_result.get("values", [[]])[0] or HEADERS
+
+    # 소스 컬럼 → 대상 컬럼 매핑
+    imported = 0
+    now = datetime.utcnow().isoformat()
+    rows_to_append = []
+
+    for src_row in data_rows:
+        src_data = dict(zip(src_header, src_row + [""] * (len(src_header) - len(src_row))))
+        # id가 없으면 새로 생성
+        if not src_data.get("id"):
+            src_data["id"] = str(uuid.uuid4())
+        if not src_data.get("registeredAt"):
+            src_data["registeredAt"] = now
+        if not src_data.get("updatedAt"):
+            src_data["updatedAt"] = now
+
+        dst_row = [src_data.get(col, "") for col in dst_header]
+        rows_to_append.append(dst_row)
+        imported += 1
+
+    if rows_to_append:
+        service.spreadsheets().values().append(
+            spreadsheetId=dst_sheet_id,
+            range=f"'{dst_worksheet}'!A1",
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body={"values": rows_to_append},
+        ).execute()
+
+    return imported
+
+
+def rename_spreadsheet(credentials, sheet_id: str, new_title: str) -> None:
+    """구글 시트 문서 이름 변경."""
+    service = _sheets_service(credentials)
+    service.spreadsheets().batchUpdate(
+        spreadsheetId=sheet_id,
+        body={"requests": [{"updateSpreadsheetProperties": {
+            "properties": {"title": new_title},
+            "fields": "title",
+        }}]},
+    ).execute()
+
+
+def rename_worksheet(credentials, sheet_id: str, old_name: str, new_name: str) -> None:
+    """워크시트(탭) 이름 변경."""
+    service = _sheets_service(credentials)
+    spreadsheet = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+    sheets = spreadsheet.get("sheets", [])
+    target = next((s for s in sheets if s["properties"]["title"] == old_name), None)
+    if target is None:
+        raise ValueError(f"워크시트 '{old_name}'를 찾을 수 없습니다.")
+
+    gid = target["properties"]["sheetId"]
+    service.spreadsheets().batchUpdate(
+        spreadsheetId=sheet_id,
+        body={"requests": [{"updateSheetProperties": {
+            "properties": {"sheetId": gid, "title": new_name},
+            "fields": "title",
+        }}]},
+    ).execute()
+
+
+def get_all_items(credentials, sheet_id: str, worksheet_name: str = DEFAULT_WORKSHEET_NAME) -> list[dict]:
+    """워크시트에서 모든 작품 조회."""
     service = _sheets_service(credentials)
     result = service.spreadsheets().values().get(
         spreadsheetId=sheet_id,
-        range=f"'{WORKSHEET_NAME}'",
+        range=f"'{worksheet_name}'",
     ).execute()
     rows = result.get("values", [])
     if len(rows) < 2:
@@ -74,30 +189,31 @@ def get_all_items(credentials, sheet_id: str) -> list[dict]:
     header = rows[0]
     items = []
     for row in rows[1:]:
-        # 빈 컬럼 채우기
         padded = row + [""] * (len(header) - len(row))
         item = dict(zip(header, padded))
         items.append(item)
     return items
 
 
-def _find_row_index(credentials, sheet_id: str, item_id: str) -> int | None:
-    """id로 행 인덱스(1-based, 헤더 제외) 반환. 없으면 None."""
+def _find_row_index(credentials, sheet_id: str, item_id: str,
+                    worksheet_name: str = DEFAULT_WORKSHEET_NAME) -> int | None:
+    """id로 행 인덱스(1-based) 반환. 없으면 None."""
     service = _sheets_service(credentials)
     result = service.spreadsheets().values().get(
         spreadsheetId=sheet_id,
-        range=f"'{WORKSHEET_NAME}'!A:A",
+        range=f"'{worksheet_name}'!A:A",
     ).execute()
     rows = result.get("values", [])
     for i, row in enumerate(rows):
         if i == 0:
-            continue  # 헤더 스킵
+            continue
         if row and row[0] == item_id:
-            return i + 1  # 1-based row number
+            return i + 1
     return None
 
 
-def append_item(credentials, sheet_id: str, data: dict) -> dict:
+def append_item(credentials, sheet_id: str, data: dict,
+                worksheet_name: str = DEFAULT_WORKSHEET_NAME) -> dict:
     """새 작품 등록."""
     service = _sheets_service(credentials)
     now = datetime.utcnow().isoformat()
@@ -113,15 +229,15 @@ def append_item(credentials, sheet_id: str, data: dict) -> dict:
         str(data.get("rating", "")),
         str(data.get("officialRating", "")),
         data.get("watchedAt", ""),
-        now,  # registeredAt
-        now,  # updatedAt
+        now,
+        now,
         data.get("review", ""),
         data.get("synopsis", ""),
     ]
 
     service.spreadsheets().values().append(
         spreadsheetId=sheet_id,
-        range=f"'{WORKSHEET_NAME}'!A1",
+        range=f"'{worksheet_name}'!A1",
         valueInputOption="RAW",
         insertDataOption="INSERT_ROWS",
         body={"values": [row]},
@@ -130,19 +246,19 @@ def append_item(credentials, sheet_id: str, data: dict) -> dict:
     return dict(zip(HEADERS, row))
 
 
-def update_item(credentials, sheet_id: str, item_id: str, data: dict) -> dict | None:
+def update_item(credentials, sheet_id: str, item_id: str, data: dict,
+                worksheet_name: str = DEFAULT_WORKSHEET_NAME) -> dict | None:
     """기존 작품 수정."""
-    row_index = _find_row_index(credentials, sheet_id, item_id)
+    row_index = _find_row_index(credentials, sheet_id, item_id, worksheet_name)
     if row_index is None:
         return None
 
     service = _sheets_service(credentials)
     now = datetime.utcnow().isoformat()
 
-    # 기존 데이터 조회
     result = service.spreadsheets().values().get(
         spreadsheetId=sheet_id,
-        range=f"'{WORKSHEET_NAME}'!A{row_index}:{chr(64+len(HEADERS))}{row_index}",
+        range=f"'{worksheet_name}'!A{row_index}:{chr(64+len(HEADERS))}{row_index}",
     ).execute()
     existing_row = result.get("values", [[]])[0]
     existing = dict(zip(HEADERS, existing_row + [""] * (len(HEADERS) - len(existing_row))))
@@ -158,14 +274,14 @@ def update_item(credentials, sheet_id: str, item_id: str, data: dict) -> dict | 
         str(data.get("officialRating", existing.get("officialRating", ""))),
         data.get("watchedAt", existing.get("watchedAt", "")),
         existing.get("registeredAt", now),
-        now,  # updatedAt
+        now,
         data.get("review", existing.get("review", "")),
         data.get("synopsis", existing.get("synopsis", "")),
     ]
 
     service.spreadsheets().values().update(
         spreadsheetId=sheet_id,
-        range=f"'{WORKSHEET_NAME}'!A{row_index}",
+        range=f"'{worksheet_name}'!A{row_index}",
         valueInputOption="RAW",
         body={"values": [row]},
     ).execute()
@@ -173,25 +289,23 @@ def update_item(credentials, sheet_id: str, item_id: str, data: dict) -> dict | 
     return dict(zip(HEADERS, row))
 
 
-def delete_item(credentials, sheet_id: str, item_id: str) -> bool:
+def delete_item(credentials, sheet_id: str, item_id: str,
+                worksheet_name: str = DEFAULT_WORKSHEET_NAME) -> bool:
     """작품 삭제 후 '삭제' 워크시트로 이관."""
-    row_index = _find_row_index(credentials, sheet_id, item_id)
+    row_index = _find_row_index(credentials, sheet_id, item_id, worksheet_name)
     if row_index is None:
         return False
 
     service = _sheets_service(credentials)
 
-    # 삭제 전 데이터 읽기
     result = service.spreadsheets().values().get(
         spreadsheetId=sheet_id,
-        range=f"'{WORKSHEET_NAME}'!A{row_index}:{chr(64+len(HEADERS))}{row_index}",
+        range=f"'{worksheet_name}'!A{row_index}:{chr(64+len(HEADERS))}{row_index}",
     ).execute()
     row_data = result.get("values", [[]])[0]
 
-    # '삭제' 워크시트 확보
     ensure_worksheet(credentials, sheet_id, DELETED_WORKSHEET_NAME, DELETED_HEADERS)
 
-    # 삭제 시트에 이관
     deleted_row = row_data + [""] * (len(HEADERS) - len(row_data))
     deleted_row.append(datetime.utcnow().isoformat())
     service.spreadsheets().values().append(
@@ -202,11 +316,10 @@ def delete_item(credentials, sheet_id: str, item_id: str) -> bool:
         body={"values": [deleted_row]},
     ).execute()
 
-    # 원본 시트에서 행 삭제
     spreadsheet = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
     sheets = spreadsheet.get("sheets", [])
     main_sheet = next(
-        (s for s in sheets if s["properties"]["title"] == WORKSHEET_NAME), None
+        (s for s in sheets if s["properties"]["title"] == worksheet_name), None
     )
     if main_sheet is None:
         return False
@@ -228,9 +341,10 @@ def delete_item(credentials, sheet_id: str, item_id: str) -> bool:
     return True
 
 
-def update_watched(credentials, sheet_id: str, item_id: str, watched: bool) -> bool:
+def update_watched(credentials, sheet_id: str, item_id: str, watched: bool,
+                   worksheet_name: str = DEFAULT_WORKSHEET_NAME) -> bool:
     """관람 여부만 빠르게 업데이트."""
-    row_index = _find_row_index(credentials, sheet_id, item_id)
+    row_index = _find_row_index(credentials, sheet_id, item_id, worksheet_name)
     if row_index is None:
         return False
 
@@ -245,11 +359,11 @@ def update_watched(credentials, sheet_id: str, item_id: str, watched: bool) -> b
             "valueInputOption": "RAW",
             "data": [
                 {
-                    "range": f"'{WORKSHEET_NAME}'!{watched_col}{row_index}",
+                    "range": f"'{worksheet_name}'!{watched_col}{row_index}",
                     "values": [["true" if watched else "false"]],
                 },
                 {
-                    "range": f"'{WORKSHEET_NAME}'!{updated_col}{row_index}",
+                    "range": f"'{worksheet_name}'!{updated_col}{row_index}",
                     "values": [[now]],
                 },
             ],

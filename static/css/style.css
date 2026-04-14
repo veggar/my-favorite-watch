@@ -240,6 +240,22 @@ a.card-title:hover { text-decoration-color: var(--color-primary); }
 .user-avatar { width: 40px; height: 40px; border-radius: 50%; }
 .link-muted { font-size: 13px; color: var(--color-text-muted); }
 
+/* ===== 탭 ===== */
+.tab-bar { display: flex; border-bottom: 2px solid var(--color-border); margin-bottom: 20px; }
+.tab-btn {
+  flex: 1; padding: 10px; font-size: 14px; font-weight: 500;
+  color: var(--color-text-muted); border-bottom: 2px solid transparent;
+  margin-bottom: -2px; transition: all .15s;
+}
+.tab-btn.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+
+/* ===== 인라인 폼 ===== */
+.inline-form { display: flex; gap: 8px; align-items: center; }
+.inline-form .form-input { flex: 1; }
+
+/* ===== 성공 알림 ===== */
+.alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+
 /* ===== 검색 자동 실행 ===== */
 @media (max-width: 480px) {
   .form-row { grid-template-columns: 1fr; }

@@ -1,6 +1,6 @@
 from flask import Blueprint, request, session, redirect, url_for, jsonify
 from routes.auth import sheet_required, get_credentials
-from services.google_sheets import append_item, update_item, delete_item, update_watched
+from services.google_sheets import append_item, update_item, delete_item, update_watched, DEFAULT_WORKSHEET_NAME
 from services.tmdb import fetch_title_info
 
 item_bp = Blueprint("item", __name__)
@@ -29,16 +29,16 @@ def _parse_form(form):
 def create():
     credentials = get_credentials()
     sheet_id = session.get("sheet_id")
+    worksheet_name = session.get("worksheet_name", DEFAULT_WORKSHEET_NAME)
     data = _parse_form(request.form)
 
-    # titleLink가 없으면 TMDb 자동 검색
     if not data["titleLink"] and data["title"]:
         tmdb = fetch_title_info(data["title"], data.get("category", ""))
         data["titleLink"] = tmdb.get("titleLink", "")
         if not data["officialRating"]:
             data["officialRating"] = tmdb.get("officialRating", "")
 
-    append_item(credentials, sheet_id, data)
+    append_item(credentials, sheet_id, data, worksheet_name)
     return redirect(url_for("main.index"))
 
 
@@ -47,16 +47,16 @@ def create():
 def update(item_id):
     credentials = get_credentials()
     sheet_id = session.get("sheet_id")
+    worksheet_name = session.get("worksheet_name", DEFAULT_WORKSHEET_NAME)
     data = _parse_form(request.form)
 
-    # title 변경 + titleLink 재검색 요청 시
     if request.form.get("refresh_link") == "true" and data["title"]:
         tmdb = fetch_title_info(data["title"], data.get("category", ""))
         data["titleLink"] = tmdb.get("titleLink", "") or data["titleLink"]
         if not data["officialRating"]:
             data["officialRating"] = tmdb.get("officialRating", "")
 
-    update_item(credentials, sheet_id, item_id, data)
+    update_item(credentials, sheet_id, item_id, data, worksheet_name)
     return redirect(url_for("main.index"))
 
 
@@ -65,7 +65,8 @@ def update(item_id):
 def delete(item_id):
     credentials = get_credentials()
     sheet_id = session.get("sheet_id")
-    delete_item(credentials, sheet_id, item_id)
+    worksheet_name = session.get("worksheet_name", DEFAULT_WORKSHEET_NAME)
+    delete_item(credentials, sheet_id, item_id, worksheet_name)
     return redirect(url_for("main.index"))
 
 
@@ -75,9 +76,10 @@ def toggle_watched(item_id):
     """관람 여부 토글 (AJAX용)."""
     credentials = get_credentials()
     sheet_id = session.get("sheet_id")
+    worksheet_name = session.get("worksheet_name", DEFAULT_WORKSHEET_NAME)
     data = request.get_json(silent=True) or {}
     watched = bool(data.get("watched", False))
-    success = update_watched(credentials, sheet_id, item_id, watched)
+    success = update_watched(credentials, sheet_id, item_id, watched, worksheet_name)
     return jsonify({"ok": success})
 
 

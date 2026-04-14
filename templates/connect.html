@@ -11,32 +11,70 @@
     <div class="connect-header">
       <span class="logo-icon">🎬</span>
       <h1 class="connect-title">Google Sheet 연결</h1>
-      <p class="connect-desc">작품 기록을 저장할 Google Sheet URL을 입력해주세요.<br>
-        <code>My Favorite Watch</code> 워크시트가 자동으로 생성됩니다.</p>
     </div>
 
     {% if error %}
     <div class="alert alert-error">{{ error }}</div>
     {% endif %}
 
-    <form method="post" action="{{ url_for('sheet.connect') }}" class="connect-form">
-      <label for="sheet_url" class="form-label">Google Sheet URL</label>
-      <input
-        type="url"
-        id="sheet_url"
-        name="sheet_url"
-        class="form-input"
-        placeholder="https://docs.google.com/spreadsheets/d/..."
-        required
-        autofocus
-      >
-      <p class="form-hint">시트를 공유하거나 본인 소유의 시트 URL을 입력하세요.</p>
-      <button type="submit" class="btn btn-primary btn-full">연결하기</button>
-    </form>
+    <!-- 탭 -->
+    <div class="tab-bar" id="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('connect')">기존 시트 연결</button>
+      <button class="tab-btn" onclick="switchTab('create')">새 시트 만들기</button>
+    </div>
+
+    <!-- 기존 시트 연결 -->
+    <div id="tab-connect" class="tab-content">
+      <p class="connect-desc">연결할 Google Sheet URL을 입력하세요.<br>
+        지정한 워크시트가 없으면 자동으로 생성됩니다.</p>
+      <form method="post" action="{{ url_for('sheet.connect') }}" class="connect-form">
+        <input type="hidden" name="action" value="connect">
+        <div class="form-group">
+          <label class="form-label">Google Sheet URL</label>
+          <input type="url" name="sheet_url" class="form-input"
+            placeholder="https://docs.google.com/spreadsheets/d/..." required autofocus>
+        </div>
+        <div class="form-group">
+          <label class="form-label">워크시트 이름</label>
+          <input type="text" name="worksheet_name" class="form-input"
+            value="{{ default_worksheet }}" placeholder="{{ default_worksheet }}">
+          <p class="form-hint">데이터를 저장할 워크시트(탭) 이름입니다.</p>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">연결하기</button>
+      </form>
+    </div>
+
+    <!-- 새 시트 만들기 -->
+    <div id="tab-create" class="tab-content" style="display:none;">
+      <p class="connect-desc">새 Google Sheet 문서를 만들고 바로 시작하세요.</p>
+      <form method="post" action="{{ url_for('sheet.connect') }}" class="connect-form">
+        <input type="hidden" name="action" value="create">
+        <div class="form-group">
+          <label class="form-label">문서 이름</label>
+          <input type="text" name="doc_title" class="form-input"
+            value="My Favorite Watch" placeholder="My Favorite Watch">
+        </div>
+        <div class="form-group">
+          <label class="form-label">워크시트 이름</label>
+          <input type="text" name="worksheet_name" class="form-input"
+            value="{{ default_worksheet }}" placeholder="{{ default_worksheet }}">
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">새 시트 만들기</button>
+      </form>
+    </div>
 
     <div class="connect-footer">
       <a href="{{ url_for('auth.logout') }}" class="link-muted">로그아웃</a>
     </div>
   </div>
+
+  <script>
+    function switchTab(name) {
+      document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById('tab-' + name).style.display = 'block';
+      event.target.classList.add('active');
+    }
+  </script>
 </body>
 </html>

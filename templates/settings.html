@@ -19,6 +19,10 @@
 
   <main class="settings-container">
 
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
     <!-- 계정 정보 -->
     <section class="settings-section">
       <h2 class="section-title">계정</h2>
@@ -39,11 +43,37 @@
       <h2 class="section-title">연결된 시트</h2>
       <div class="settings-item">
         <div>
-          <div class="settings-value">{{ sheet_title }}</div>
-          <div class="settings-meta">{{ sheet_id }}</div>
+          <div class="settings-value">📄 {{ sheet_title }}</div>
+          <div class="settings-meta">워크시트: {{ worksheet_name }}</div>
+          <div class="settings-meta" style="margin-top:2px;">{{ sheet_id }}</div>
         </div>
       </div>
-      <form method="post">
+
+      <!-- 문서 이름 변경 -->
+      <form method="post" style="margin-bottom:8px;">
+        <input type="hidden" name="action" value="rename_doc">
+        <div class="inline-form">
+          <input type="text" name="new_doc_title" class="form-input"
+            value="{{ sheet_title }}" placeholder="새 문서 이름">
+          <button type="submit" class="btn btn-secondary btn-sm">문서 이름 변경</button>
+        </div>
+      </form>
+
+      <!-- 워크시트 이름 변경 -->
+      <form method="post" style="margin-bottom:12px;">
+        <input type="hidden" name="action" value="rename_worksheet">
+        <div class="inline-form">
+          <input type="text" name="new_worksheet_name" class="form-input"
+            value="{{ worksheet_name }}" placeholder="새 워크시트 이름">
+          <button type="submit" class="btn btn-secondary btn-sm">워크시트 이름 변경</button>
+        </div>
+      </form>
+
+      <!-- 데이터 가져오기 -->
+      <a href="{{ url_for('sheet.import_sheet') }}" class="btn btn-secondary btn-full">다른 시트에서 데이터 가져오기</a>
+
+      <!-- 시트 다시 연결 -->
+      <form method="post" style="margin-top:8px;">
         <input type="hidden" name="action" value="disconnect_sheet">
         <button type="submit" class="btn btn-secondary btn-full">다른 시트 연결</button>
       </form>
