@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init:*)",
+      "Bash(mkdir -p routes services templates/partials static/css static/js)",
+      "Bash(python3 -c \"import app; print\\('Import OK'\\)\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8090/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8090/settings)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8090/connect)",
+      "Bash(pkill -f \"python3 app.py\")",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(gh repo:*)",
+      "Bash(brew list:*)",
+      "Bash(gh auth:*)",
+      "Bash(pkill -f \"python3 /Users/veggar/Documents/work/second-by-claude-code/app.py\")"
+    ]
+  }
+}

@@ -18,6 +18,7 @@
 ## Project Rules
 
 - If a PRD.md exists for the requirements, update the PRD.md when the requirements change.
+- If there is a request for code modifications requiring major feature changes, create a branch, modify the code, and get confirmation for the merge.
 - For changes, **create a branch first**, then proceed.
 - branch name: claude/{feature name}
 - Use Server Side Rendering.

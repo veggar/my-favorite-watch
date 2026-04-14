@@ -4,6 +4,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Google OAuth 로컬 개발용 설정
+os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
+os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"  # HTTP 허용 (개발 환경 전용)
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-in-production")
 

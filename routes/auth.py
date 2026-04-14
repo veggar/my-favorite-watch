@@ -21,7 +21,7 @@ CLIENT_CONFIG = {
         "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET"),
         "auth_uri": "https://accounts.google.com/o/oauth2/auth",
         "token_uri": "https://oauth2.googleapis.com/token",
-        "redirect_uris": ["http://localhost:8080/auth/callback"],
+        "redirect_uris": ["http://localhost:8090/auth/callback"],
     }
 }
 
@@ -30,7 +30,7 @@ def _build_flow():
     flow = Flow.from_client_config(
         CLIENT_CONFIG,
         scopes=SCOPES,
-        redirect_uri="http://localhost:8080/auth/callback",
+        redirect_uri="http://localhost:8090/auth/callback",
     )
     return flow
 
