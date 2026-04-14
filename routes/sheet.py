@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, session, redirect, url_for
+from flask import Blueprint, render_template, request, session, redirect, url_for, jsonify
 from routes.auth import login_required, get_credentials
 from services.google_sheets import (
     extract_sheet_id,
@@ -114,4 +114,70 @@ def import_sheet():
         success=success,
         worksheets=worksheets,
         src_sheet_id=src_sheet_id,
+    )
+
+
+@sheet_bp.route("/upload-csv", methods=["GET", "POST"])
+@login_required
+def upload_csv():
+    """CSV 파일을 파싱해 미리보기 후 Google Sheet에 일괄 등록."""
+    from services.csv_import import parse_csv, summarize
+    from services.google_sheets import append_item
+
+    error = None
+    preview = None
+    summary = None
+
+    if request.method == "POST":
+        action = request.form.get("action", "preview")
+
+        if action == "preview":
+            file = request.files.get("csv_file")
+            if not file or not file.filename:
+                error = "CSV 파일을 선택해주세요."
+            else:
+                try:
+                    content = file.read()
+                    items = parse_csv(content)
+                    if not items:
+                        error = "파일에서 유효한 데이터를 찾을 수 없습니다."
+                    else:
+                        summary = summarize(items)
+                        preview = items[:20]  # 최대 20건 미리보기
+                        session["csv_import_data"] = items  # 임시 저장
+                except Exception as e:
+                    error = f"파싱 실패: {e}"
+
+        elif action == "import":
+            items = session.pop("csv_import_data", None)
+            if not items:
+                error = "가져올 데이터가 없습니다. 다시 파일을 업로드해주세요."
+            elif not session.get("sheet_id"):
+                return redirect(url_for("sheet.connect"))
+            else:
+                credentials = get_credentials()
+                sheet_id = session["sheet_id"]
+                worksheet_name = session.get("worksheet_name", DEFAULT_WORKSHEET_NAME)
+                success_count = 0
+                fail_count = 0
+                for item in items:
+                    try:
+                        append_item(credentials, sheet_id, item, worksheet_name)
+                        success_count += 1
+                    except Exception:
+                        fail_count += 1
+                msg = f"{success_count}개 등록 완료"
+                if fail_count:
+                    msg += f" ({fail_count}개 실패)"
+                session["import_success"] = msg
+                return redirect(url_for("main.index"))
+
+    import_success = session.pop("import_success", None)
+    return render_template(
+        "upload_csv.html",
+        user=session.get("user"),
+        error=error,
+        preview=preview,
+        summary=summary,
+        import_success=import_success,
     )

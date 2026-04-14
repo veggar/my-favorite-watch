@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CSV 가져오기 — My Favorite Watch</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="settings-page">
+
+  <header class="app-header">
+    <div class="header-left">
+      <a href="{{ url_for('main.index') }}" class="back-btn">← 목록</a>
+    </div>
+    <div class="header-right">
+      <span class="app-name">CSV 가져오기</span>
+    </div>
+  </header>
+
+  <main class="settings-container">
+
+    {% if import_success %}
+    <div class="alert alert-success">{{ import_success }}</div>
+    {% endif %}
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    {% if not preview %}
+    <!-- ① 파일 업로드 폼 -->
+    <section class="settings-section">
+      <h2 class="section-title">CSV 파일 선택</h2>
+      <p class="connect-desc" style="margin-bottom:16px;">
+        아래 컬럼 순서의 CSV 파일을 지원합니다:<br>
+        <code>관람여부, 장르, 제목, 평점, 등록날짜, 관람날짜, 간단후기</code><br><br>
+        평점은 <code>A+, A, B+, B, B-, C+, C, C-</code> 형식을 숫자로 자동 변환합니다.<br>
+        관람여부 <code>v</code> = 관람 완료, 빈값 = 보고 싶어요.
+      </p>
+      <form method="post" enctype="multipart/form-data">
+        <input type="hidden" name="action" value="preview">
+        <div class="form-group">
+          <label class="form-label">CSV 파일 (.csv)</label>
+          <input type="file" name="csv_file" accept=".csv" class="form-input" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">미리보기</button>
+      </form>
+    </section>
+
+    {% else %}
+    <!-- ② 파싱 결과 미리보기 -->
+    <section class="settings-section">
+      <h2 class="section-title">파싱 결과</h2>
+      <div class="csv-summary">
+        <div class="summary-item">
+          <span class="summary-label">전체</span>
+          <span class="summary-value">{{ summary.total }}개</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">관람 완료</span>
+          <span class="summary-value watched">{{ summary.watched }}개</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">보고 싶어요</span>
+          <span class="summary-value want">{{ summary.want }}개</span>
+        </div>
+      </div>
+      <div class="category-breakdown">
+        {% for cat, cnt in summary.categories.items() %}
+        <span class="badge badge-category" style="margin:2px;">{{ cat }} {{ cnt }}</span>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2 class="section-title">미리보기 (최대 20건)</h2>
+      <div class="preview-table-wrap">
+        <table class="preview-table">
+          <thead>
+            <tr>
+              <th>관람</th>
+              <th>제목</th>
+              <th>카테고리</th>
+              <th>장르</th>
+              <th>평점</th>
+              <th>관람일</th>
+              <th>후기</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in preview %}
+            <tr>
+              <td>{% if item.watched == 'true' %}✓{% else %}♥{% endif %}</td>
+              <td class="td-title">{{ item.title }}</td>
+              <td><span class="badge badge-category">{{ item.category }}</span></td>
+              <td>{{ item.genre }}</td>
+              <td>{{ item.rating }}</td>
+              <td>{{ item.watchedAt[:10] if item.watchedAt else '' }}</td>
+              <td class="td-review">{{ item.review[:30] }}{% if item.review|length > 30 %}…{% endif %}</td>
+            </tr>
+            {% endfor %}
+            {% if summary.total > 20 %}
+            <tr class="more-row">
+              <td colspan="7">… 외 {{ summary.total - 20 }}개</td>
+            </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2 class="section-title">Google Sheet에 등록</h2>
+      <p class="connect-desc" style="margin-bottom:12px;">
+        <strong>{{ summary.total }}개</strong> 작품을 현재 연결된 시트에 추가합니다.<br>
+        기존 데이터는 유지되고 새 행으로 추가됩니다.
+      </p>
+      <form method="post" onsubmit="this.querySelector('button').disabled=true; document.getElementById('loading-overlay').style.display='flex';">
+        <input type="hidden" name="action" value="import">
+        <button type="submit" class="btn btn-primary btn-full">{{ summary.total }}개 등록하기</button>
+      </form>
+      <a href="{{ url_for('sheet.upload_csv') }}" class="btn btn-secondary btn-full" style="margin-top:8px;">다시 선택</a>
+    </section>
+    {% endif %}
+
+  </main>
+
+  <div class="loading-overlay" id="loading-overlay" style="display:none;">
+    <div class="loading-spinner"></div>
+  </div>
+
+  <style>
+    .csv-summary { display: flex; gap: 16px; margin-bottom: 12px; flex-wrap: wrap; }
+    .summary-item { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .summary-label { font-size: 11px; color: var(--color-text-muted); }
+    .summary-value { font-size: 20px; font-weight: 700; }
+    .summary-value.watched { color: var(--color-watched-btn); }
+    .summary-value.want { color: var(--color-want-btn); }
+    .category-breakdown { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+    .preview-table-wrap { overflow-x: auto; }
+    .preview-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .preview-table th, .preview-table td { padding: 6px 8px; border-bottom: 1px solid var(--color-border); text-align: left; }
+    .preview-table th { background: var(--color-bg); font-weight: 600; }
+    .td-title { max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .td-review { max-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-text-muted); }
+    .more-row td { text-align: center; color: var(--color-text-muted); font-style: italic; padding: 8px; }
+  </style>
+</body>
+</html>

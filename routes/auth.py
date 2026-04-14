@@ -50,6 +50,11 @@ def google_login():
         prompt="consent",
     )
     session["oauth_state"] = state
+    # PKCE code_verifier가 생성된 경우 세션에 저장
+    if hasattr(flow, "code_verifier") and flow.code_verifier:
+        session["code_verifier"] = flow.code_verifier
+    elif hasattr(flow.oauth2session, "_code_verifier"):
+        session["code_verifier"] = flow.oauth2session._code_verifier
     return redirect(authorization_url)
 
 
@@ -59,6 +64,10 @@ def auth_callback():
         return redirect(url_for("auth.login"))
 
     flow = _build_flow()
+    # PKCE verifier 복원
+    code_verifier = session.pop("code_verifier", None)
+    if code_verifier:
+        flow.code_verifier = code_verifier
     flow.fetch_token(authorization_response=request.url)
 
     credentials = flow.credentials
