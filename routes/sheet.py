@@ -1,3 +1,4 @@
+import time
 from flask import Blueprint, render_template, request, session, redirect, url_for, jsonify
 from routes.auth import login_required, get_credentials
 from services.google_sheets import (
@@ -6,11 +7,14 @@ from services.google_sheets import (
     ensure_worksheet,
     create_spreadsheet,
     import_from_sheet,
+    get_all_items,
+    update_item,
     DEFAULT_WORKSHEET_NAME,
     HEADERS,
     DELETED_HEADERS,
     DELETED_WORKSHEET_NAME,
 )
+from services.tmdb import enrich_item, enrich_items_batch
 
 sheet_bp = Blueprint("sheet", __name__)
 
@@ -95,11 +99,33 @@ def import_sheet():
                     src_worksheet = request.form.get("src_worksheet", "")
                     dst_sheet_id = session.get("sheet_id")
                     dst_worksheet = session.get("worksheet_name", DEFAULT_WORKSHEET_NAME)
+
+                    # 가져오기 전 기존 항목 수 기록
+                    before = get_all_items(credentials, dst_sheet_id, dst_worksheet)
+                    before_count = len(before)
+
                     count = import_from_sheet(
                         credentials, src_sheet_id, src_worksheet,
                         dst_sheet_id, dst_worksheet
                     )
+
+                    # 새로 추가된 항목만 TMDb 보강 후 시트에 업데이트
+                    enriched = 0
+                    if count > 0:
+                        all_items = get_all_items(credentials, dst_sheet_id, dst_worksheet)
+                        new_items = all_items[before_count:]
+                        for i, item in enumerate(new_items):
+                            if i > 0:
+                                time.sleep(0.1)
+                            if enrich_item(item):
+                                data = dict(item)
+                                data["watched"] = item.get("watched", "").lower() == "true"
+                                update_item(credentials, dst_sheet_id, item["id"], data, dst_worksheet)
+                                enriched += 1
+
                     success = f"{count}개 작품을 가져왔습니다."
+                    if enriched:
+                        success += f" (TMDb 링크 {enriched}개 자동 연결)"
             except Exception as e:
                 err_str = str(e)
                 if "403" in err_str:
@@ -158,6 +184,10 @@ def upload_csv():
                 credentials = get_credentials()
                 sheet_id = session["sheet_id"]
                 worksheet_name = session.get("worksheet_name", DEFAULT_WORKSHEET_NAME)
+
+                # TMDb로 titleLink / officialRating 보강 (삽입 전)
+                enriched = enrich_items_batch(items)
+
                 success_count = 0
                 fail_count = 0
                 for item in items:
@@ -166,7 +196,10 @@ def upload_csv():
                         success_count += 1
                     except Exception:
                         fail_count += 1
+
                 msg = f"{success_count}개 등록 완료"
+                if enriched:
+                    msg += f" (TMDb 링크 {enriched}개 자동 연결)"
                 if fail_count:
                     msg += f" ({fail_count}개 실패)"
                 session["import_success"] = msg

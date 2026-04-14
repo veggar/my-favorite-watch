@@ -93,3 +93,38 @@ def tmdb_search():
         return jsonify({"titleLink": "", "officialRating": ""})
     result = fetch_title_info(title, category)
     return jsonify(result)
+
+
+@item_bp.route("/item/<item_id>/tmdb-update", methods=["POST"])
+@sheet_required
+def tmdb_update(item_id):
+    """기존 항목의 titleLink / officialRating을 TMDb로 덮어쓰기 (AJAX용)."""
+    from services.google_sheets import get_all_items
+    credentials = get_credentials()
+    sheet_id = session.get("sheet_id")
+    worksheet_name = session.get("worksheet_name", DEFAULT_WORKSHEET_NAME)
+
+    # 해당 항목 조회
+    all_items = get_all_items(credentials, sheet_id, worksheet_name)
+    item = next((it for it in all_items if it.get("id") == item_id), None)
+    if not item:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."})
+
+    result = fetch_title_info(item.get("title", ""), item.get("category", ""))
+    if not result.get("titleLink") and not result.get("officialRating"):
+        return jsonify({"ok": False, "error": "TMDb에서 작품을 찾지 못했습니다."})
+
+    # 업데이트할 데이터 구성
+    data = dict(item)
+    data["watched"] = item.get("watched", "").lower() == "true"
+    if result.get("titleLink"):
+        data["titleLink"] = result["titleLink"]
+    if result.get("officialRating"):
+        data["officialRating"] = result["officialRating"]
+
+    update_item(credentials, sheet_id, item_id, data, worksheet_name)
+    return jsonify({
+        "ok": True,
+        "titleLink": data.get("titleLink", ""),
+        "officialRating": data.get("officialRating", ""),
+    })

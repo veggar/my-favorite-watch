@@ -58,6 +58,12 @@
     <button type="button" class="btn btn-secondary btn-sm" onclick="previewTmdb()">TMDb 검색</button>
   </div>
   <div id="tmdb-preview" class="tmdb-preview" style="display:none;"></div>
+  <!-- 수정 모달에서만 노출 (등록 시에는 저장 시 자동 검색) -->
+  <button type="button" class="btn btn-tmdb btn-sm" id="btn-tmdb-update" style="display:none; margin-top:6px; width:100%;"
+    onclick="tmdbUpdateItem()">
+    ↺ TMDb로 링크·공식평점 업데이트
+  </button>
+  <div id="tmdb-update-result" style="display:none; margin-top:4px; font-size:12px;"></div>
 </div>
 
 <div class="form-group">

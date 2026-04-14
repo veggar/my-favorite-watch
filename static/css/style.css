@@ -165,6 +165,9 @@ a.card-title:hover { text-decoration-color: var(--color-primary); }
 .btn-secondary { background: #fff; border-color: var(--color-border); color: var(--color-text); }
 .btn-danger { background: var(--color-danger); color: #fff; }
 .btn-sm { padding: 6px 12px; font-size: 12px; }
+.btn-tmdb { background: #01b4e4; color: #fff; border-color: #01b4e4; }
+.btn-tmdb:hover { background: #0196c0; }
+.btn-tmdb:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-full { width: 100%; margin-top: 8px; }
 
 /* ===== 폼 ===== */

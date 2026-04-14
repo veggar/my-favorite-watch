@@ -223,6 +223,7 @@
     const ITEMS_DATA = {{ items | tojson }};
     const TOGGLE_WATCHED_URL = "{{ url_for('item.toggle_watched', item_id='__ID__') }}";
     const UPDATE_URL_TEMPLATE = "{{ url_for('item.update', item_id='__ID__') }}";
+    const TMDB_UPDATE_URL = "{{ url_for('item.tmdb_update', item_id='__ID__') }}";
   </script>
   <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>

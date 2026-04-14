@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "")
@@ -13,7 +14,7 @@ def _search(title: str, media_type: str) -> dict | None:
         resp = requests.get(
             f"{TMDB_BASE}/search/{media_type}",
             params={"api_key": TMDB_API_KEY, "query": title, "language": "ko-KR"},
-            timeout=5,
+            timeout=3,
         )
         data = resp.json()
         results = data.get("results", [])
@@ -57,3 +58,42 @@ def fetch_title_info(title: str, category: str = "") -> dict:
             result["officialRating"] = f"{vote:.1f}"
 
     return result
+
+
+def enrich_item(item: dict) -> bool:
+    """
+    단일 항목의 빈 titleLink / officialRating을 TMDb로 채움.
+    변경된 필드가 있으면 True 반환.
+    """
+    if not TMDB_API_KEY:
+        return False
+    need_link = not item.get("titleLink")
+    need_rating = not item.get("officialRating")
+    if not need_link and not need_rating:
+        return False
+
+    result = fetch_title_info(item.get("title", ""), item.get("category", ""))
+    changed = False
+    if need_link and result.get("titleLink"):
+        item["titleLink"] = result["titleLink"]
+        changed = True
+    if need_rating and result.get("officialRating"):
+        item["officialRating"] = result["officialRating"]
+        changed = True
+    return changed
+
+
+def enrich_items_batch(items: list[dict], rate_limit_sec: float = 0.1) -> int:
+    """
+    여러 항목을 TMDb로 일괄 보강 (in-place 수정).
+    변경된 항목 수 반환. TMDb 키 없으면 즉시 0 반환.
+    """
+    if not TMDB_API_KEY:
+        return 0
+    updated = 0
+    for i, item in enumerate(items):
+        if i > 0:
+            time.sleep(rate_limit_sec)
+        if enrich_item(item):
+            updated += 1
+    return updated

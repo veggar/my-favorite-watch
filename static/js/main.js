@@ -42,9 +42,12 @@ function closeModal(name) {
 }
 
 // ===== 수정 모달 =====
+let _currentEditId = null;
+
 function openEditModal(id) {
   const item = ITEMS_DATA.find(it => it.id === id);
   if (!item) return;
+  _currentEditId = id;
 
   // 폼 액션 설정
   const form = document.getElementById("edit-form");
@@ -68,9 +71,13 @@ function openEditModal(id) {
   setWatched(watched);
 
   if (item.watchedAt) {
-    // ISO 문자열을 날짜 형식으로 변환
     document.getElementById("form-watchedAt").value = item.watchedAt.slice(0, 10);
   }
+
+  // "업데이트 by TMDb" 버튼 노출
+  document.getElementById("btn-tmdb-update").style.display = "block";
+  document.getElementById("tmdb-update-result").style.display = "none";
+  document.getElementById("tmdb-update-result").textContent = "";
 
   // title 변경 감지 → 링크 재검색 여부 물어보기
   document.getElementById("form-title").addEventListener("change", function () {
@@ -86,8 +93,44 @@ function openEditModal(id) {
   document.getElementById("form-title").focus();
 }
 
+// ===== TMDb 업데이트 (기존 항목) =====
+async function tmdbUpdateItem() {
+  if (!_currentEditId) return;
+  const btn = document.getElementById("btn-tmdb-update");
+  const resultEl = document.getElementById("tmdb-update-result");
+
+  btn.disabled = true;
+  btn.textContent = "검색 중...";
+  resultEl.style.display = "none";
+
+  try {
+    const url = TMDB_UPDATE_URL.replace("__ID__", _currentEditId);
+    const resp = await fetch(url, { method: "POST" });
+    const data = await resp.json();
+
+    if (data.ok) {
+      if (data.titleLink) document.getElementById("form-titleLink").value = data.titleLink;
+      if (data.officialRating) document.getElementById("form-officialRating").value = data.officialRating;
+      resultEl.textContent = `✓ 업데이트 완료: 링크${data.titleLink ? " ✓" : " -"} / 공식평점 ${data.officialRating || "-"}`;
+      resultEl.style.color = "#166534";
+    } else {
+      resultEl.textContent = `✗ ${data.error || "TMDb에서 찾지 못했습니다."}`;
+      resultEl.style.color = "#dc2626";
+    }
+    resultEl.style.display = "block";
+  } catch {
+    resultEl.textContent = "✗ 네트워크 오류";
+    resultEl.style.color = "#dc2626";
+    resultEl.style.display = "block";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "↺ TMDb로 링크·공식평점 업데이트";
+  }
+}
+
 // ===== 폼 초기화 =====
 function resetForm() {
+  _currentEditId = null;
   document.getElementById("form-title").value = "";
   document.getElementById("form-category").value = "";
   document.getElementById("form-genre").value = "";
@@ -98,6 +141,9 @@ function resetForm() {
   document.getElementById("form-rating").value = "0";
   document.getElementById("rating-display").textContent = "0";
   document.getElementById("tmdb-preview").style.display = "none";
+  // 등록 모달에서는 TMDb 업데이트 버튼 숨김
+  const updateBtn = document.getElementById("btn-tmdb-update");
+  if (updateBtn) updateBtn.style.display = "none";
   setWatched(false);
 }
 
