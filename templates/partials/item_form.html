@@ -1,0 +1,71 @@
+<!-- 공통 등록/수정 폼 필드 -->
+<div class="form-group">
+  <label class="form-label">제목 <span class="required">*</span></label>
+  <input type="text" name="title" id="form-title" class="form-input" required placeholder="작품 제목">
+</div>
+
+<div class="form-row">
+  <div class="form-group">
+    <label class="form-label">카테고리 <span class="required">*</span></label>
+    <select name="category" id="form-category" class="form-input" required>
+      <option value="">선택</option>
+      <option value="영화">영화</option>
+      <option value="드라마">드라마</option>
+      <option value="다큐">다큐</option>
+      <option value="애니">애니</option>
+      <option value="기타">기타</option>
+    </select>
+  </div>
+  <div class="form-group">
+    <label class="form-label">장르</label>
+    <input type="text" name="genre" id="form-genre" class="form-input" placeholder="예: 액션, SF">
+  </div>
+</div>
+
+<div class="form-row">
+  <div class="form-group">
+    <label class="form-label">관람 여부 <span class="required">*</span></label>
+    <div class="watched-toggle-wrap">
+      <button type="button" class="watched-btn active" id="btn-want" onclick="setWatched(false)">♥ 보고 싶어요</button>
+      <button type="button" class="watched-btn" id="btn-watched" onclick="setWatched(true)">✓ 관람 완료</button>
+    </div>
+    <input type="hidden" name="watched" id="form-watched" value="false">
+  </div>
+  <div class="form-group" id="watched-at-group" style="display:none;">
+    <label class="form-label">관람 날짜</label>
+    <input type="date" name="watchedAt" id="form-watchedAt" class="form-input">
+  </div>
+</div>
+
+<div class="form-row">
+  <div class="form-group">
+    <label class="form-label">나의 평점</label>
+    <div class="rating-input-wrap">
+      <input type="range" name="rating" id="form-rating" min="0" max="5" step="0.5" value="0" oninput="document.getElementById('rating-display').textContent=this.value">
+      <span id="rating-display" class="rating-display">0</span>
+    </div>
+  </div>
+  <div class="form-group">
+    <label class="form-label">공식 평점</label>
+    <input type="text" name="officialRating" id="form-officialRating" class="form-input" placeholder="자동 수집">
+  </div>
+</div>
+
+<div class="form-group">
+  <label class="form-label">작품 링크 (URL)</label>
+  <div class="link-input-row">
+    <input type="url" name="titleLink" id="form-titleLink" class="form-input" placeholder="자동 검색 또는 직접 입력">
+    <button type="button" class="btn btn-secondary btn-sm" onclick="previewTmdb()">TMDb 검색</button>
+  </div>
+  <div id="tmdb-preview" class="tmdb-preview" style="display:none;"></div>
+</div>
+
+<div class="form-group">
+  <label class="form-label">후기</label>
+  <textarea name="review" id="form-review" class="form-input form-textarea" placeholder="간단한 후기를 남겨보세요" rows="3"></textarea>
+</div>
+
+<div class="form-group">
+  <label class="form-label">내용 요약</label>
+  <textarea name="synopsis" id="form-synopsis" class="form-input form-textarea" placeholder="간략한 내용 요약" rows="3"></textarea>
+</div>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>설정 — My Favorite Watch</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="settings-page">
+
+  <header class="app-header">
+    <div class="header-left">
+      <a href="{{ url_for('main.index') }}" class="back-btn">← 목록</a>
+    </div>
+    <div class="header-right">
+      <span class="app-name">설정</span>
+    </div>
+  </header>
+
+  <main class="settings-container">
+
+    <!-- 계정 정보 -->
+    <section class="settings-section">
+      <h2 class="section-title">계정</h2>
+      <div class="settings-item">
+        {% if user.picture %}
+        <img src="{{ user.picture }}" alt="프로필" class="user-avatar">
+        {% endif %}
+        <div>
+          <div class="settings-value">{{ user.name }}</div>
+          <div class="settings-meta">{{ user.email }}</div>
+        </div>
+      </div>
+      <a href="{{ url_for('auth.logout') }}" class="btn btn-danger btn-full">로그아웃</a>
+    </section>
+
+    <!-- 연결된 시트 -->
+    <section class="settings-section">
+      <h2 class="section-title">연결된 시트</h2>
+      <div class="settings-item">
+        <div>
+          <div class="settings-value">{{ sheet_title }}</div>
+          <div class="settings-meta">{{ sheet_id }}</div>
+        </div>
+      </div>
+      <form method="post">
+        <input type="hidden" name="action" value="disconnect_sheet">
+        <button type="submit" class="btn btn-secondary btn-full">다른 시트 연결</button>
+      </form>
+    </section>
+
+    <!-- 기본 설정 -->
+    <section class="settings-section">
+      <h2 class="section-title">기본 표시 설정</h2>
+      <form method="post">
+        <input type="hidden" name="action" value="save_defaults">
+        <div class="form-group">
+          <label class="form-label">기본 정렬</label>
+          <select name="default_sort" class="form-input">
+            {% for key, label in sort_options.items() %}
+            <option value="{{ key }}" {% if default_sort == key %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">기본 카테고리 필터</label>
+          <select name="default_category" class="form-input">
+            {% for cat in categories %}
+            <option value="{{ cat }}" {% if default_category == cat %}selected{% endif %}>{{ cat }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">기본 관람 여부 필터</label>
+          <select name="default_watched" class="form-input">
+            <option value="all" {% if default_watched == 'all' %}selected{% endif %}>전체</option>
+            <option value="watched" {% if default_watched == 'watched' %}selected{% endif %}>관람 완료</option>
+            <option value="want" {% if default_watched == 'want' %}selected{% endif %}>보고 싶어요</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">저장</button>
+      </form>
+    </section>
+
+  </main>
+</body>
+</html>

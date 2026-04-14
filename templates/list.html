@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Favorite Watch</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="list-page">
+
+  <!-- 상단 헤더 -->
+  <header class="app-header">
+    <div class="header-left">
+      <span class="app-name">🎬 My Favorite Watch</span>
+    </div>
+    <div class="header-right">
+      <span class="user-name">{{ user.name }}</span>
+      <a href="{{ url_for('settings.settings') }}" class="btn-icon" title="설정">⚙️</a>
+    </div>
+  </header>
+
+  <!-- 검색/필터/정렬 툴바 -->
+  <div class="toolbar">
+    <form method="get" action="{{ url_for('main.index') }}" id="filter-form" class="toolbar-form">
+      <div class="search-row">
+        <div class="search-input-wrap">
+          <input
+            type="text"
+            name="q"
+            value="{{ query }}"
+            placeholder="제목 검색..."
+            class="search-input"
+            id="search-input"
+            autocomplete="off"
+          >
+          {% if query %}
+          <button type="button" class="search-clear" onclick="document.getElementById('search-input').value='';document.getElementById('filter-form').submit();">✕</button>
+          {% endif %}
+        </div>
+        <select name="scope" class="select-sm" onchange="this.form.submit()">
+          <option value="title" {% if scope=='title' %}selected{% endif %}>제목</option>
+          <option value="all" {% if scope=='all' %}selected{% endif %}>전체</option>
+        </select>
+      </div>
+
+      <div class="filter-row">
+        <!-- 카테고리 필터 -->
+        <div class="filter-chips" id="category-chips">
+          {% for cat in categories %}
+          <button type="button"
+            class="chip {% if category_filter == cat %}active{% endif %}"
+            onclick="setFilter('category','{{ cat }}')">{{ cat }}</button>
+          {% endfor %}
+        </div>
+        <input type="hidden" name="category" id="category-input" value="{{ category_filter }}">
+
+        <!-- 관람 여부 필터 -->
+        <div class="filter-chips">
+          <button type="button" class="chip {% if watched_filter=='all' %}active{% endif %}"
+            onclick="setFilter('watched','all')">전체</button>
+          <button type="button" class="chip chip-watched {% if watched_filter=='watched' %}active{% endif %}"
+            onclick="setFilter('watched','watched')">관람 완료</button>
+          <button type="button" class="chip chip-want {% if watched_filter=='want' %}active{% endif %}"
+            onclick="setFilter('watched','want')">보고 싶어요</button>
+        </div>
+        <input type="hidden" name="watched" id="watched-input" value="{{ watched_filter }}">
+
+        <!-- 정렬 -->
+        <div class="sort-wrap">
+          <select name="sort" class="select-sm" onchange="this.form.submit()">
+            {% for key, info in sort_options.items() %}
+            <option value="{{ key }}" {% if sort_key==key %}selected{% endif %}>{{ info[0] }}</option>
+            {% endfor %}
+          </select>
+          <!-- 새로 등록 버튼 -->
+          <button type="button" class="btn btn-primary btn-sm" onclick="openRegisterModal()">+ 등록</button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <!-- 결과 요약 -->
+  <div class="result-summary">
+    {% if query or category_filter != '전체' or watched_filter != 'all' %}
+    {{ filtered_count }}개 (전체 {{ total }}개)
+    {% else %}
+    전체 {{ total }}개
+    {% endif %}
+  </div>
+
+  {% if load_error %}
+  <div class="alert alert-error">
+    목록을 불러오지 못했습니다: {{ load_error }}
+    <button onclick="location.reload()" class="btn btn-sm">재시도</button>
+  </div>
+  {% endif %}
+
+  <!-- 작품 카드 목록 -->
+  <main class="card-list">
+    {% if not items %}
+    <div class="empty-state">
+      <p>{% if query or category_filter != '전체' or watched_filter != 'all' %}검색 결과가 없습니다.{% else %}아직 등록된 작품이 없습니다.<br><button onclick="openRegisterModal()" class="btn btn-primary">첫 작품 등록하기</button>{% endif %}</p>
+    </div>
+    {% endif %}
+
+    {% for item in items %}
+    {% set is_watched = item.watched | lower == 'true' %}
+    <div class="card {% if is_watched %}card-watched{% else %}card-want{% endif %}" id="card-{{ item.id }}" data-id="{{ item.id }}">
+
+      <!-- 1행: 주요 정보 -->
+      <div class="card-row1" onclick="toggleCard('{{ item.id }}')">
+        <div class="card-info">
+          <div class="card-title-line">
+            {% if item.titleLink %}
+            <a href="{{ item.titleLink }}" target="_blank" rel="noopener" class="card-title" onclick="event.stopPropagation()">{{ item.title }}</a>
+            {% else %}
+            <span class="card-title">{{ item.title }}</span>
+            {% endif %}
+            <span class="badge badge-category">{{ item.category }}</span>
+            {% if item.genre %}
+            <span class="badge badge-genre">{{ item.genre }}</span>
+            {% endif %}
+          </div>
+          <div class="card-ratings">
+            {% if item.rating %}
+            <span class="rating-my" title="나의 평점">⭐ {{ item.rating }}</span>
+            {% endif %}
+            {% if item.officialRating %}
+            <span class="rating-official" title="공식 평점">🎬 {{ item.officialRating }}</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- 관람 여부 토글 -->
+        <button
+          class="btn-watch-toggle {% if is_watched %}toggled{% endif %}"
+          onclick="event.stopPropagation(); toggleWatched('{{ item.id }}', {{ 'true' if is_watched else 'false' }})"
+          title="{% if is_watched %}보고 싶어요로 변경{% else %}관람 완료로 변경{% endif %}"
+        >
+          {% if is_watched %}✓ 관람 완료{% else %}♥ 보고 싶어요{% endif %}
+        </button>
+      </div>
+
+      <!-- 2행: 부수 정보 -->
+      <div class="card-row2" onclick="toggleCard('{{ item.id }}')">
+        {% if item.watchedAt %}<span class="meta">관람: {{ item.watchedAt[:10] }}</span>{% endif %}
+        {% if item.registeredAt %}<span class="meta">등록: {{ item.registeredAt[:10] }}</span>{% endif %}
+      </div>
+
+      <!-- 펼침 영역: 상세 정보 + 수정/삭제 -->
+      <div class="card-detail" id="detail-{{ item.id }}" style="display:none;">
+        {% if item.review %}
+        <div class="detail-section">
+          <span class="detail-label">후기</span>
+          <p class="detail-text">{{ item.review }}</p>
+        </div>
+        {% endif %}
+        {% if item.synopsis %}
+        <div class="detail-section">
+          <span class="detail-label">내용 요약</span>
+          <p class="detail-text">{{ item.synopsis }}</p>
+        </div>
+        {% endif %}
+        {% if not item.review and not item.synopsis %}
+        <p class="detail-empty">등록된 후기/내용 요약이 없습니다.</p>
+        {% endif %}
+
+        <div class="detail-actions">
+          <button class="btn btn-secondary btn-sm" onclick="openEditModal('{{ item.id }}')">수정</button>
+          <form method="post" action="{{ url_for('item.delete', item_id=item.id) }}" onsubmit="return confirm('정말 삭제하시겠습니까?');" style="display:inline;">
+            <button type="submit" class="btn btn-danger btn-sm">삭제</button>
+          </form>
+        </div>
+      </div>
+
+    </div>
+    {% endfor %}
+  </main>
+
+  <!-- 등록 모달 -->
+  <div class="modal-overlay" id="register-overlay" style="display:none;" onclick="closeModal('register')">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h2>새 작품 등록</h2>
+        <button class="modal-close" onclick="closeModal('register')">✕</button>
+      </div>
+      <form method="post" action="{{ url_for('item.create') }}" class="item-form" id="register-form">
+        {% include 'partials/item_form.html' %}
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('register')">취소</button>
+          <button type="submit" class="btn btn-primary">저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 수정 모달 -->
+  <div class="modal-overlay" id="edit-overlay" style="display:none;" onclick="closeModal('edit')">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h2>작품 수정</h2>
+        <button class="modal-close" onclick="closeModal('edit')">✕</button>
+      </div>
+      <form method="post" action="" class="item-form" id="edit-form">
+        <input type="hidden" name="original_title" id="edit-original-title">
+        <input type="hidden" name="refresh_link" id="edit-refresh-link" value="false">
+        {% include 'partials/item_form.html' %}
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('edit')">취소</button>
+          <button type="submit" class="btn btn-primary">저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 로딩 오버레이 -->
+  <div class="loading-overlay" id="loading-overlay" style="display:none;">
+    <div class="loading-spinner"></div>
+  </div>
+
+  <!-- 데이터 전달용 -->
+  <script>
+    const ITEMS_DATA = {{ items | tojson }};
+    const TOGGLE_WATCHED_URL = "{{ url_for('item.toggle_watched', item_id='__ID__') }}";
+    const UPDATE_URL_TEMPLATE = "{{ url_for('item.update', item_id='__ID__') }}";
+  </script>
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

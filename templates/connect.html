@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>시트 연결 — My Favorite Watch</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="connect-page">
+  <div class="connect-container">
+    <div class="connect-header">
+      <span class="logo-icon">🎬</span>
+      <h1 class="connect-title">Google Sheet 연결</h1>
+      <p class="connect-desc">작품 기록을 저장할 Google Sheet URL을 입력해주세요.<br>
+        <code>My Favorite Watch</code> 워크시트가 자동으로 생성됩니다.</p>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('sheet.connect') }}" class="connect-form">
+      <label for="sheet_url" class="form-label">Google Sheet URL</label>
+      <input
+        type="url"
+        id="sheet_url"
+        name="sheet_url"
+        class="form-input"
+        placeholder="https://docs.google.com/spreadsheets/d/..."
+        required
+        autofocus
+      >
+      <p class="form-hint">시트를 공유하거나 본인 소유의 시트 URL을 입력하세요.</p>
+      <button type="submit" class="btn btn-primary btn-full">연결하기</button>
+    </form>
+
+    <div class="connect-footer">
+      <a href="{{ url_for('auth.logout') }}" class="link-muted">로그아웃</a>
+    </div>
+  </div>
+</body>
+</html>
