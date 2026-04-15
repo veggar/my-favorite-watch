@@ -189,7 +189,7 @@
         <button class="modal-close" onclick="closeModal('register')">✕</button>
       </div>
       <form method="post" action="{{ url_for('item.create') }}" class="item-form" id="register-form">
-        {% include 'partials/item_form.html' %}
+        {% with form_ns = "reg" %}{% include 'partials/item_form.html' %}{% endwith %}
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" onclick="closeModal('register')">취소</button>
           <button type="submit" class="btn btn-primary">저장</button>
@@ -208,7 +208,7 @@
       <form method="post" action="" class="item-form" id="edit-form">
         <input type="hidden" name="original_title" id="edit-original-title">
         <input type="hidden" name="refresh_link" id="edit-refresh-link" value="false">
-        {% include 'partials/item_form.html' %}
+        {% with form_ns = "edit" %}{% include 'partials/item_form.html' %}{% endwith %}
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" onclick="closeModal('edit')">취소</button>
           <button type="submit" class="btn btn-primary">저장</button>

@@ -34,7 +34,7 @@ async function toggleWatched(id, currentWatched) {
 function openRegisterModal() {
   resetForm();
   document.getElementById("register-overlay").style.display = "flex";
-  document.getElementById("form-title").focus();
+  document.getElementById("reg-form-title").focus();
 }
 
 function closeModal(name) {
@@ -54,34 +54,34 @@ function openEditModal(id) {
   form.action = UPDATE_URL_TEMPLATE.replace("__ID__", id);
 
   // 필드 채우기
-  document.getElementById("form-title").value = item.title || "";
-  document.getElementById("form-category").value = item.category || "";
-  document.getElementById("form-genre").value = item.genre || "";
-  document.getElementById("form-officialRating").value = item.officialRating || "";
-  document.getElementById("form-originalTitle").value = item.originalTitle || "";
-  document.getElementById("form-titleLink").value = item.titleLink || "";
-  document.getElementById("form-review").value = item.review || "";
-  document.getElementById("form-synopsis").value = item.synopsis || "";
+  document.getElementById("edit-form-title").value = item.title || "";
+  document.getElementById("edit-form-category").value = item.category || "";
+  document.getElementById("edit-form-genre").value = item.genre || "";
+  document.getElementById("edit-form-officialRating").value = item.officialRating || "";
+  document.getElementById("edit-form-originalTitle").value = item.originalTitle || "";
+  document.getElementById("edit-form-titleLink").value = item.titleLink || "";
+  document.getElementById("edit-form-review").value = item.review || "";
+  document.getElementById("edit-form-synopsis").value = item.synopsis || "";
   document.getElementById("edit-original-title").value = item.title || "";
 
   const rating = parseFloat(item.rating) || 0;
-  document.getElementById("form-rating").value = rating;
-  document.getElementById("rating-display").textContent = rating;
+  document.getElementById("edit-form-rating").value = rating;
+  document.getElementById("edit-rating-display").textContent = rating;
 
   const watched = (item.watched || "").toLowerCase() === "true";
-  setWatched(watched);
+  setWatched(watched, "edit");
 
   if (item.watchedAt) {
-    document.getElementById("form-watchedAt").value = item.watchedAt.slice(0, 10);
+    document.getElementById("edit-form-watchedAt").value = item.watchedAt.slice(0, 10);
   }
 
   // "업데이트 by TMDb" 버튼 노출
-  document.getElementById("btn-tmdb-update").style.display = "block";
-  document.getElementById("tmdb-update-result").style.display = "none";
-  document.getElementById("tmdb-update-result").textContent = "";
+  document.getElementById("edit-btn-tmdb-update").style.display = "block";
+  document.getElementById("edit-tmdb-update-result").style.display = "none";
+  document.getElementById("edit-tmdb-update-result").textContent = "";
 
   // title 변경 감지 → 링크 재검색 여부 물어보기
-  document.getElementById("form-title").addEventListener("change", function () {
+  document.getElementById("edit-form-title").addEventListener("change", function () {
     const newTitle = this.value.trim();
     const original = document.getElementById("edit-original-title").value.trim();
     if (newTitle && newTitle !== original) {
@@ -91,14 +91,14 @@ function openEditModal(id) {
   }, { once: true });
 
   document.getElementById("edit-overlay").style.display = "flex";
-  document.getElementById("form-title").focus();
+  document.getElementById("edit-form-title").focus();
 }
 
 // ===== TMDb 업데이트 (기존 항목) =====
 async function tmdbUpdateItem() {
   if (!_currentEditId) return;
-  const btn = document.getElementById("btn-tmdb-update");
-  const resultEl = document.getElementById("tmdb-update-result");
+  const btn = document.getElementById("edit-btn-tmdb-update");
+  const resultEl = document.getElementById("edit-tmdb-update-result");
 
   btn.disabled = true;
   btn.textContent = "검색 중...";
@@ -110,9 +110,9 @@ async function tmdbUpdateItem() {
     const data = await resp.json();
 
     if (data.ok) {
-      if (data.titleLink) document.getElementById("form-titleLink").value = data.titleLink;
-      if (data.officialRating) document.getElementById("form-officialRating").value = data.officialRating;
-      if (data.originalTitle) document.getElementById("form-originalTitle").value = data.originalTitle;
+      if (data.titleLink) document.getElementById("edit-form-titleLink").value = data.titleLink;
+      if (data.officialRating) document.getElementById("edit-form-officialRating").value = data.officialRating;
+      if (data.originalTitle) document.getElementById("edit-form-originalTitle").value = data.originalTitle;
       resultEl.textContent = `✓ 업데이트 완료: 링크${data.titleLink ? " ✓" : " -"} / 공식평점 ${data.officialRating || "-"}`;
       resultEl.style.color = "#166534";
     } else {
@@ -133,29 +133,29 @@ async function tmdbUpdateItem() {
 // ===== 폼 초기화 =====
 function resetForm() {
   _currentEditId = null;
-  document.getElementById("form-title").value = "";
-  document.getElementById("form-category").value = "";
-  document.getElementById("form-genre").value = "";
-  document.getElementById("form-officialRating").value = "";
-  document.getElementById("form-originalTitle").value = "";
-  document.getElementById("form-titleLink").value = "";
-  document.getElementById("form-review").value = "";
-  document.getElementById("form-synopsis").value = "";
-  document.getElementById("form-rating").value = "0";
-  document.getElementById("rating-display").textContent = "0";
-  document.getElementById("tmdb-preview").style.display = "none";
+  document.getElementById("reg-form-title").value = "";
+  document.getElementById("reg-form-category").value = "";
+  document.getElementById("reg-form-genre").value = "";
+  document.getElementById("reg-form-officialRating").value = "";
+  document.getElementById("reg-form-originalTitle").value = "";
+  document.getElementById("reg-form-titleLink").value = "";
+  document.getElementById("reg-form-review").value = "";
+  document.getElementById("reg-form-synopsis").value = "";
+  document.getElementById("reg-form-rating").value = "0";
+  document.getElementById("reg-rating-display").textContent = "0";
+  document.getElementById("reg-tmdb-preview").style.display = "none";
   // 등록 모달에서는 TMDb 업데이트 버튼 숨김
-  const updateBtn = document.getElementById("btn-tmdb-update");
+  const updateBtn = document.getElementById("reg-btn-tmdb-update");
   if (updateBtn) updateBtn.style.display = "none";
-  setWatched(false);
+  setWatched(false, "reg");
 }
 
 // ===== 관람 여부 설정 =====
-function setWatched(watched) {
-  document.getElementById("form-watched").value = watched ? "true" : "false";
-  document.getElementById("btn-want").classList.toggle("active", !watched);
-  document.getElementById("btn-watched").classList.toggle("active", watched);
-  document.getElementById("watched-at-group").style.display = watched ? "block" : "none";
+function setWatched(watched, ns) {
+  document.getElementById(ns + "-form-watched").value = watched ? "true" : "false";
+  document.getElementById(ns + "-btn-want").classList.toggle("active", !watched);
+  document.getElementById(ns + "-btn-watched").classList.toggle("active", watched);
+  document.getElementById(ns + "-watched-at-group").style.display = watched ? "block" : "none";
 }
 
 // ===== 필터 설정 =====
@@ -173,12 +173,12 @@ function setFilter(name, value) {
 }
 
 // ===== TMDb 미리보기 =====
-async function previewTmdb() {
-  const title = document.getElementById("form-title").value.trim();
-  const category = document.getElementById("form-category").value;
+async function previewTmdb(ns) {
+  const title = document.getElementById(ns + "-form-title").value.trim();
+  const category = document.getElementById(ns + "-form-category").value;
   if (!title) { alert("제목을 먼저 입력해주세요."); return; }
 
-  const preview = document.getElementById("tmdb-preview");
+  const preview = document.getElementById(ns + "-tmdb-preview");
   preview.style.display = "block";
   preview.textContent = "검색 중...";
 
@@ -186,9 +186,9 @@ async function previewTmdb() {
     const resp = await fetch(`/item/tmdb-search?title=${encodeURIComponent(title)}&category=${encodeURIComponent(category)}`);
     const data = await resp.json();
     if (data.titleLink) {
-      document.getElementById("form-titleLink").value = data.titleLink;
-      if (data.officialRating && !document.getElementById("form-officialRating").value) {
-        document.getElementById("form-officialRating").value = data.officialRating;
+      document.getElementById(ns + "-form-titleLink").value = data.titleLink;
+      if (data.officialRating && !document.getElementById(ns + "-form-officialRating").value) {
+        document.getElementById(ns + "-form-officialRating").value = data.officialRating;
       }
       preview.textContent = `✓ 링크 찾음: ${data.titleLink}${data.officialRating ? ` | 공식 평점: ${data.officialRating}` : ""}`;
     } else {

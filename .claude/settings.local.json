@@ -27,7 +27,11 @@
       "Bash(python3 -c \"import sys; print\\(sys.path\\)\")",
       "Bash(python3 -m pip install flask-session==0.8.0)",
       "Bash(python3 -c \"from app import app; print\\('app import OK'\\)\")",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(python3 -m flask run --port 8080)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8080/)",
+      "Bash(python3 -m pip install python-dotenv)",
+      "Bash(curl -s http://localhost:8080/)"
     ]
   }
 }
