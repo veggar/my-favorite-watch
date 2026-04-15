@@ -1,33 +1,50 @@
-# Gerneral Thinking Rules
+# General Thinking Rules
 
-- Before writing any code, describe your approach and wait for approval. Always ask clarifying questions before writing any code if requirements are ambiguous.
-- If there is a deviation from consistency among the requirements, propose a consistent item and obtain confirmation.
-- Basically, divide a complex problem or task into two or more smaller problems or tasks. “devide and conquer”.
-- Every time I correct your mistake, you add a new rule to the instructions to make sure it doesn't happen again.
-- If an installation requires admin privileges rather than general privileges, you must provide an explanation and obtain approval.
-- Data requiring security must be entered through settings.
-  
-## Outputs
+* Before writing any code, describe your approach and wait for approval.
+* If the requirements are ambiguous, ask clarifying questions before writing any code.
+* If there is any inconsistency among the requirements, propose one consistent interpretation and obtain confirmation.
+* Break complex problems into two or more smaller tasks. Use a divide-and-conquer approach.
+* Every time I correct your mistake, add a new rule to these instructions to help prevent the same mistake from happening again.
+* Do not silently assume missing requirements for business logic, security, or data handling. State assumptions explicitly.
 
-- Answers and question, rules, excluding code, are in Korean.
+## Language Rules
+
+* All answers, questions, and explanatory text, excluding code, must be written in Korean.
+
+## Security & Permissions
+
+* If an installation requires admin privileges rather than general user privileges, explain why and obtain approval first.
+* Sensitive data such as API keys, tokens, passwords, and private credentials must be provided through secure settings or environment variables, not hardcoded in code or prompts.
+* Never expose secrets in logs, code snippets, screenshots, or commit history.
 
 ## Project Rules
 
-- If a PRD.md exists for the requirements, ** update the PRD.md ** when the requirements change.
-- If there is a request for code modifications requiring major feature changes, create a branch, modify the code, and get confirmation for the merge.
-- For changes, **create a branch first**, then proceed.
-- branch name: claude/{feature name}
-- Use Server Side Rendering.
+* If a `PRD.md` file exists and the requirements change, update `PRD.md` accordingly.
+* If `PRD.md` conflicts with newly given instructions, highlight the conflict and obtain confirmation before proceeding.
+* For any non-trivial code change, create a branch first before proceeding.
+* For major feature changes, create a new branch before making modifications, then request confirmation before merging.
+* Use the branch naming convention: `claude/{feature-name}`.
+
+## Architecture Rules
+
+* Prefer Server-Side Rendering (SSR) unless there is a clear reason to use another rendering strategy.
 
 ## Coding Standards
-- After writing code, list what could break and suggest tests to cover it.
-- For each change, the related codes must also be updated if necessary.
-- When there’s a bug, start by writing a test that reproduces it, then fix it until the test passes.
-- To prevent Korean characters from being included in the graphs output by the Python code, translate them into English and use them.
-- The translated legend applied to the graph is provided in its original Korean text separately from the graph.
+
+* After writing code, list what could break and suggest tests to cover it.
+* For each change, update all related code, configuration, tests, and documentation as needed to keep the project consistent.
+* When there is a bug, start by writing a test that reproduces it, then fix the bug until the test passes.
+* When generating graphs with Python, translate Korean text into English so that Korean characters do not appear in the graph output.
+* When graph labels are translated into English, provide the original Korean legend separately alongside the graph output.
+* When suggesting tests, include happy paths, edge cases, and failure cases.
+* After making changes, summarize what changed, why it changed, and any follow-up actions needed.
 
 ## Commands
-- Update the installation and execution methods below.
-  - Install: `pip install -r requirements.txt`
-  - - Run: `export $(cat .env | xargs) && python3 app.py`  (포트: 8080)
-  
+
+* Explicitly document the installation and execution steps for the project.
+* If the documented installation or execution steps are missing, outdated, or inconsistent with the actual project setup, update these instructions before proceeding.
+* When updating commands, ensure that required environment variables, ports, entry points, and prerequisite steps are clearly specified.
+* Write the installation method in the "Install:" section below and the execution command in the "Run:" section.
+
+  * Install: 
+  * Run: 
