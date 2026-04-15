@@ -15,7 +15,11 @@
       "Bash(brew list:*)",
       "Bash(gh auth:*)",
       "Bash(pkill -f \"python3 /Users/veggar/Documents/work/second-by-claude-code/app.py\")",
-      "Bash(python3 -c ':*)"
+      "Bash(python3 -c ':*)",
+      "Bash(pip show *)",
+      "Bash(pip3 show *)",
+      "Bash(python3 -c \"import flask_session\")",
+      "Bash(/Users/veggar/Library/Python/3.12/bin/pip3 install *)"
     ]
   }
 }
