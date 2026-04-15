@@ -175,7 +175,7 @@ def upload_csv():
                         error = "파일에서 유효한 데이터를 찾을 수 없습니다."
                     else:
                         summary = summarize(items)
-                        preview = items[:50]  # 최대 50건 미리보기
+                        preview = items  # 전체 미리보기
                         session["csv_import_data"] = items  # 임시 저장
                 except Exception as e:
                     error = f"파싱 실패: {e}"

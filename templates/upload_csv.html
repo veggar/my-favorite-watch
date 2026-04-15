@@ -73,11 +73,12 @@
     </section>
 
     <section class="settings-section">
-      <h2 class="section-title">미리보기 (최대 50건)</h2>
-      <div class="preview-table-wrap">
+      <h2 class="section-title">미리보기 (전체 {{ summary.total }}건)</h2>
+      <div class="preview-table-outer">
         <table class="preview-table">
           <thead>
             <tr>
+              <th>#</th>
               <th>관람</th>
               <th>제목</th>
               <th>카테고리</th>
@@ -90,6 +91,7 @@
           <tbody>
             {% for item in preview %}
             <tr>
+              <td class="td-num">{{ loop.index }}</td>
               <td>{% if item.watched == 'true' %}✓{% else %}♥{% endif %}</td>
               <td class="td-title">{{ item.title }}</td>
               <td><span class="badge badge-category">{{ item.category }}</span></td>
@@ -99,11 +101,6 @@
               <td class="td-review">{{ item.review[:30] }}{% if item.review|length > 30 %}…{% endif %}</td>
             </tr>
             {% endfor %}
-            {% if summary.total > 50 %}
-            <tr class="more-row">
-              <td colspan="7">… 외 {{ summary.total - 50 }}개</td>
-            </tr>
-            {% endif %}
           </tbody>
         </table>
       </div>
@@ -137,13 +134,23 @@
     .summary-value.watched { color: var(--color-watched-btn); }
     .summary-value.want { color: var(--color-want-btn); }
     .category-breakdown { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
-    .preview-table-wrap { overflow-x: auto; }
-    .preview-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .preview-table th, .preview-table td { padding: 6px 8px; border-bottom: 1px solid var(--color-border); text-align: left; }
-    .preview-table th { background: var(--color-bg); font-weight: 600; }
-    .td-title { max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .td-review { max-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-text-muted); }
-    .more-row td { text-align: center; color: var(--color-text-muted); font-style: italic; padding: 8px; }
+    .preview-table-outer {
+      overflow: auto;
+      max-height: calc(30 * 33px); /* 행 높이 33px × 30행 */
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+    }
+    .preview-table { border-collapse: collapse; font-size: 12px; }
+    .preview-table thead th {
+      position: sticky; top: 0; z-index: 1;
+      background: var(--color-bg); font-weight: 600;
+    }
+    .preview-table th, .preview-table td {
+      padding: 6px 8px; border-bottom: 1px solid var(--color-border);
+      text-align: left; white-space: nowrap;
+    }
+    .td-num { color: var(--color-text-muted); text-align: right; }
+    .td-review { color: var(--color-text-muted); }
   </style>
 </body>
 </html>
