@@ -19,7 +19,15 @@
       "Bash(pip show *)",
       "Bash(pip3 show *)",
       "Bash(python3 -c \"import flask_session\")",
-      "Bash(/Users/veggar/Library/Python/3.12/bin/pip3 install *)"
+      "Bash(/Users/veggar/Library/Python/3.12/bin/pip3 install *)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -c \"import flask_session; print\\(flask_session.__file__\\); from flask_session import Session; print\\('OK'\\)\")",
+      "Bash(python3 -m pip show flask-session)",
+      "Bash(/Users/veggar/Library/Python/3.12/bin/pip3 show *)",
+      "Bash(python3 -c \"import sys; print\\(sys.path\\)\")",
+      "Bash(python3 -m pip install flask-session==0.8.0)",
+      "Bash(python3 -c \"from app import app; print\\('app import OK'\\)\")",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
