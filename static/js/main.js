@@ -58,6 +58,7 @@ function openEditModal(id) {
   document.getElementById("form-category").value = item.category || "";
   document.getElementById("form-genre").value = item.genre || "";
   document.getElementById("form-officialRating").value = item.officialRating || "";
+  document.getElementById("form-originalTitle").value = item.originalTitle || "";
   document.getElementById("form-titleLink").value = item.titleLink || "";
   document.getElementById("form-review").value = item.review || "";
   document.getElementById("form-synopsis").value = item.synopsis || "";
@@ -111,6 +112,7 @@ async function tmdbUpdateItem() {
     if (data.ok) {
       if (data.titleLink) document.getElementById("form-titleLink").value = data.titleLink;
       if (data.officialRating) document.getElementById("form-officialRating").value = data.officialRating;
+      if (data.originalTitle) document.getElementById("form-originalTitle").value = data.originalTitle;
       resultEl.textContent = `✓ 업데이트 완료: 링크${data.titleLink ? " ✓" : " -"} / 공식평점 ${data.officialRating || "-"}`;
       resultEl.style.color = "#166534";
     } else {
@@ -135,6 +137,7 @@ function resetForm() {
   document.getElementById("form-category").value = "";
   document.getElementById("form-genre").value = "";
   document.getElementById("form-officialRating").value = "";
+  document.getElementById("form-originalTitle").value = "";
   document.getElementById("form-titleLink").value = "";
   document.getElementById("form-review").value = "";
   document.getElementById("form-synopsis").value = "";
@@ -165,6 +168,7 @@ function setFilter(name, value) {
   } else if (name === "watched") {
     document.getElementById("watched-input").value = value;
   }
+  sessionStorage.setItem("focusSearch", "1");
   document.getElementById("filter-form").submit();
 }
 
@@ -204,9 +208,23 @@ function showLoading(show) {
 let searchTimer = null;
 const searchInput = document.getElementById("search-input");
 if (searchInput) {
+  // 페이지 로드 시 포커스 복귀 (검색/필터 후)
+  const shouldFocus = sessionStorage.getItem("focusSearch");
+  const hasQuery = searchInput.value.trim() !== "";
+  if (shouldFocus || hasQuery) {
+    sessionStorage.removeItem("focusSearch");
+    requestAnimationFrame(() => {
+      searchInput.focus();
+      // 커서를 텍스트 끝으로
+      const len = searchInput.value.length;
+      searchInput.setSelectionRange(len, len);
+    });
+  }
+
   searchInput.addEventListener("input", () => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
+      sessionStorage.setItem("focusSearch", "1");
       document.getElementById("filter-form").submit();
     }, 400);
   });
@@ -216,3 +234,72 @@ if (searchInput) {
 document.querySelectorAll("form[method=post]").forEach(form => {
   form.addEventListener("submit", () => showLoading(true));
 });
+
+// ===== TMDb 상태 아이콘 폴링 =====
+const TMDB_STATUS_ICONS = {
+  pending:    { icon: "⏳", title: "TMDb 검색 대기 중" },
+  searching:  { icon: "🔍", title: "TMDb 검색 중..." },
+  done:       { icon: "", title: "" },          // 완료 시 아이콘 제거
+  not_found:  { icon: "✕", title: "TMDb 정보 없음" },
+};
+
+function updateTmdbStatusIcons(statuses) {
+  for (const [id, status] of Object.entries(statuses)) {
+    const el = document.getElementById("tmdb-status-" + id);
+    if (!el) continue;
+    const info = TMDB_STATUS_ICONS[status];
+    if (!info) continue;
+    if (info.icon) {
+      el.textContent = info.icon;
+      el.title = info.title;
+      el.style.display = "inline";
+    } else {
+      el.style.display = "none";
+    }
+  }
+}
+
+(function startTmdbPolling() {
+  if (typeof TMDB_PENDING_IDS === "undefined" || !TMDB_PENDING_IDS.length) return;
+
+  // 초기 상태를 ⏳로 표시
+  TMDB_PENDING_IDS.forEach(id => {
+    const el = document.getElementById("tmdb-status-" + id);
+    if (el) { el.textContent = "⏳"; el.title = "TMDb 검색 대기 중"; el.style.display = "inline"; }
+  });
+
+  let pending = [...TMDB_PENDING_IDS];
+  let done = 0;
+  const total = pending.length;
+
+  const banner = document.getElementById("import-success-banner");
+
+  async function poll() {
+    if (!pending.length) return;
+    try {
+      const resp = await fetch(TMDB_STATUS_URL + "?ids=" + pending.join(","));
+      const statuses = await resp.json();
+      updateTmdbStatusIcons(statuses);
+
+      // 완료/실패 항목을 pending에서 제거
+      pending = pending.filter(id => {
+        const s = statuses[id];
+        if (s === "done" || s === "not_found") { done++; return false; }
+        return true;
+      });
+
+      // 진행률 배너 업데이트
+      if (banner && total > 1) {
+        const pct = Math.round((done / total) * 100);
+        banner.textContent = `TMDb 검색 중... ${pct}% (${done}/${total})`;
+        if (!pending.length) banner.textContent = `TMDb 검색 완료 (${done}/${total})`;
+      }
+
+      if (pending.length) setTimeout(poll, 2000);
+    } catch {
+      // 폴링 오류 시 조용히 중단
+    }
+  }
+
+  setTimeout(poll, 1500);
+})();

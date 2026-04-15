@@ -1,4 +1,5 @@
 import time
+import threading
 from flask import Blueprint, render_template, request, session, redirect, url_for, jsonify
 from routes.auth import login_required, get_credentials
 from services.google_sheets import (
@@ -8,13 +9,16 @@ from services.google_sheets import (
     create_spreadsheet,
     import_from_sheet,
     get_all_items,
+    get_items_title_map,
+    append_items_batch,
     update_item,
     DEFAULT_WORKSHEET_NAME,
     HEADERS,
     DELETED_HEADERS,
     DELETED_WORKSHEET_NAME,
 )
-from services.tmdb import enrich_item, enrich_items_batch
+from services.tmdb import enrich_item, enrich_items_batch, enrich_items_background
+from services.tmdb_tracker import mark_pending
 
 sheet_bp = Blueprint("sheet", __name__)
 
@@ -100,32 +104,34 @@ def import_sheet():
                     dst_sheet_id = session.get("sheet_id")
                     dst_worksheet = session.get("worksheet_name", DEFAULT_WORKSHEET_NAME)
 
-                    # 가져오기 전 기존 항목 수 기록
-                    before = get_all_items(credentials, dst_sheet_id, dst_worksheet)
-                    before_count = len(before)
+                    # 가져오기 전 기존 제목 목록 (중복 방지용)
+                    existing_map = get_items_title_map(credentials, dst_sheet_id, dst_worksheet)
+                    before_count = len(existing_map)
 
                     count = import_from_sheet(
                         credentials, src_sheet_id, src_worksheet,
-                        dst_sheet_id, dst_worksheet
+                        dst_sheet_id, dst_worksheet, existing_map
                     )
 
-                    # 새로 추가된 항목만 TMDb 보강 후 시트에 업데이트
-                    enriched = 0
+                    # 새로 추가된 항목을 비동기 TMDb 보강
                     if count > 0:
                         all_items = get_all_items(credentials, dst_sheet_id, dst_worksheet)
                         new_items = all_items[before_count:]
-                        for i, item in enumerate(new_items):
-                            if i > 0:
-                                time.sleep(0.1)
-                            if enrich_item(item):
-                                data = dict(item)
-                                data["watched"] = item.get("watched", "").lower() == "true"
-                                update_item(credentials, dst_sheet_id, item["id"], data, dst_worksheet)
-                                enriched += 1
+                        new_ids = [it["id"] for it in new_items if it.get("id")]
+                        if new_ids:
+                            mark_pending(new_ids)
+                            creds_data = dict(session.get("credentials", {}))
+                            t = threading.Thread(
+                                target=enrich_items_background,
+                                args=(creds_data, dst_sheet_id, dst_worksheet, new_items),
+                                daemon=True,
+                            )
+                            t.start()
+                            session["tmdb_pending_ids"] = new_ids
 
                     success = f"{count}개 작품을 가져왔습니다."
-                    if enriched:
-                        success += f" (TMDb 링크 {enriched}개 자동 연결)"
+                    if count > 0:
+                        success += " · TMDb 검색 중..."
             except Exception as e:
                 err_str = str(e)
                 if "403" in err_str:
@@ -169,7 +175,7 @@ def upload_csv():
                         error = "파일에서 유효한 데이터를 찾을 수 없습니다."
                     else:
                         summary = summarize(items)
-                        preview = items[:20]  # 최대 20건 미리보기
+                        preview = items[:50]  # 최대 50건 미리보기
                         session["csv_import_data"] = items  # 임시 저장
                 except Exception as e:
                     error = f"파싱 실패: {e}"
@@ -185,24 +191,44 @@ def upload_csv():
                 sheet_id = session["sheet_id"]
                 worksheet_name = session.get("worksheet_name", DEFAULT_WORKSHEET_NAME)
 
-                # TMDb로 titleLink / officialRating 보강 (삽입 전)
-                enriched = enrich_items_batch(items)
-
-                success_count = 0
-                fail_count = 0
+                # ── 중복 확인: 기존 제목과 비교 ──
+                existing_map = get_items_title_map(credentials, sheet_id, worksheet_name)
+                new_items = []
+                skipped = 0
                 for item in items:
-                    try:
-                        append_item(credentials, sheet_id, item, worksheet_name)
-                        success_count += 1
-                    except Exception:
-                        fail_count += 1
+                    title_key = item.get("title", "").strip().lower()
+                    if title_key and title_key in existing_map:
+                        skipped += 1
+                    else:
+                        new_items.append(item)
 
-                msg = f"{success_count}개 등록 완료"
-                if enriched:
-                    msg += f" (TMDb 링크 {enriched}개 자동 연결)"
-                if fail_count:
-                    msg += f" ({fail_count}개 실패)"
+                # ── 배치 저장 (한 번의 API 호출) ──
+                saved_ids = append_items_batch(
+                    credentials, sheet_id, new_items, worksheet_name
+                )
+
+                # item에 저장된 id 반영 (배치 함수가 id를 생성/유지)
+                for item, item_id in zip(new_items, saved_ids):
+                    item["id"] = item_id
+
+                # ── 비동기 TMDb 보강 ──
+                if saved_ids:
+                    mark_pending(saved_ids)
+                    creds_data = dict(session.get("credentials", {}))
+                    t = threading.Thread(
+                        target=enrich_items_background,
+                        args=(creds_data, sheet_id, worksheet_name, new_items),
+                        daemon=True,
+                    )
+                    t.start()
+
+                msg = f"{len(new_items)}개 등록 완료"
+                if skipped:
+                    msg += f" ({skipped}개 중복 건너뜀)"
+                if saved_ids:
+                    msg += " · TMDb 검색 중..."
                 session["import_success"] = msg
+                session["tmdb_pending_ids"] = saved_ids
                 return redirect(url_for("main.index"))
 
     import_success = session.pop("import_success", None)

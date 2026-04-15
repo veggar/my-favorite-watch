@@ -70,6 +70,9 @@ def index():
 
     filtered = _apply_filters_and_sort(items, query, scope, category_filter, watched_filter, sort_key)
 
+    import_success = session.pop("import_success", None)
+    tmdb_pending_ids = session.pop("tmdb_pending_ids", [])
+
     return render_template(
         "list.html",
         items=filtered,
@@ -85,4 +88,6 @@ def index():
         sort_options=SORT_OPTIONS,
         load_error=load_error,
         categories=["전체", "영화", "드라마", "다큐", "애니", "기타"],
+        import_success=import_success,
+        tmdb_pending_ids=tmdb_pending_ids,
     )

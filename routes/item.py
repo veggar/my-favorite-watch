@@ -21,6 +21,7 @@ def _parse_form(form):
         "review": form.get("review", "").strip(),
         "synopsis": form.get("synopsis", "").strip(),
         "titleLink": form.get("titleLink", "").strip(),
+        "originalTitle": form.get("originalTitle", "").strip(),
     }
 
 
@@ -95,6 +96,15 @@ def tmdb_search():
     return jsonify(result)
 
 
+@item_bp.route("/item/tmdb-status", methods=["GET"])
+@sheet_required
+def tmdb_status():
+    """TMDb 비동기 보강 상태 조회 (AJAX 폴링용)."""
+    from services.tmdb_tracker import get_statuses
+    ids = [i for i in request.args.get("ids", "").split(",") if i]
+    return jsonify(get_statuses(ids))
+
+
 @item_bp.route("/item/<item_id>/tmdb-update", methods=["POST"])
 @sheet_required
 def tmdb_update(item_id):
@@ -121,10 +131,13 @@ def tmdb_update(item_id):
         data["titleLink"] = result["titleLink"]
     if result.get("officialRating"):
         data["officialRating"] = result["officialRating"]
+    if result.get("originalTitle"):
+        data["originalTitle"] = result["originalTitle"]
 
     update_item(credentials, sheet_id, item_id, data, worksheet_name)
     return jsonify({
         "ok": True,
         "titleLink": data.get("titleLink", ""),
         "officialRating": data.get("officialRating", ""),
+        "originalTitle": data.get("originalTitle", ""),
     })

@@ -25,10 +25,10 @@ def _search(title: str, media_type: str) -> dict | None:
 
 def fetch_title_info(title: str, category: str = "") -> dict:
     """
-    작품 제목으로 TMDb에서 링크와 공식 평점을 조회.
-    반환: {"titleLink": str, "officialRating": str}
+    작품 제목으로 TMDb에서 링크, 공식 평점, 원제를 조회.
+    반환: {"titleLink": str, "officialRating": str, "originalTitle": str}
     """
-    result = {"titleLink": "", "officialRating": ""}
+    result = {"titleLink": "", "officialRating": "", "originalTitle": ""}
 
     if not TMDB_API_KEY:
         return result
@@ -56,20 +56,24 @@ def fetch_title_info(title: str, category: str = "") -> dict:
         vote = found.get("vote_average")
         if vote is not None:
             result["officialRating"] = f"{vote:.1f}"
+        # TV는 original_name, 영화는 original_title
+        orig = found.get("original_name") or found.get("original_title") or ""
+        result["originalTitle"] = orig
 
     return result
 
 
 def enrich_item(item: dict) -> bool:
     """
-    단일 항목의 빈 titleLink / officialRating을 TMDb로 채움.
+    단일 항목의 빈 titleLink / officialRating / originalTitle을 TMDb로 채움.
     변경된 필드가 있으면 True 반환.
     """
     if not TMDB_API_KEY:
         return False
     need_link = not item.get("titleLink")
     need_rating = not item.get("officialRating")
-    if not need_link and not need_rating:
+    need_orig = not item.get("originalTitle")
+    if not need_link and not need_rating and not need_orig:
         return False
 
     result = fetch_title_info(item.get("title", ""), item.get("category", ""))
@@ -80,7 +84,61 @@ def enrich_item(item: dict) -> bool:
     if need_rating and result.get("officialRating"):
         item["officialRating"] = result["officialRating"]
         changed = True
+    if need_orig and result.get("originalTitle"):
+        item["originalTitle"] = result["originalTitle"]
+        changed = True
     return changed
+
+
+def enrich_items_background(creds_data: dict, sheet_id: str, worksheet_name: str,
+                             items: list[dict]) -> None:
+    """
+    백그라운드 스레드용: items를 TMDb로 보강 후 시트 업데이트.
+    creds_data: session["credentials"] 딕셔너리 (스레드에서 세션 접근 불가)
+    """
+    from services.tmdb_tracker import set_status, clear
+    from services.google_sheets import update_item
+    from google.oauth2.credentials import Credentials
+    import google.auth.transport.requests
+
+    if not TMDB_API_KEY:
+        clear([item["id"] for item in items if item.get("id")])
+        return
+
+    try:
+        creds = Credentials(
+            token=creds_data.get("token"),
+            refresh_token=creds_data.get("refresh_token"),
+            token_uri=creds_data.get("token_uri"),
+            client_id=creds_data.get("client_id"),
+            client_secret=creds_data.get("client_secret"),
+            scopes=creds_data.get("scopes"),
+        )
+        if creds.expired and creds.refresh_token:
+            creds.refresh(google.auth.transport.requests.Request())
+    except Exception:
+        for item in items:
+            if item.get("id"):
+                set_status(item["id"], "not_found")
+        return
+
+    for i, item in enumerate(items):
+        item_id = item.get("id")
+        if not item_id:
+            continue
+        if i > 0:
+            time.sleep(0.1)
+        set_status(item_id, "searching")
+        try:
+            changed = enrich_item(item)
+            if changed:
+                data = dict(item)
+                watched_val = data.get("watched", False)
+                data["watched"] = watched_val is True or str(watched_val).lower() == "true"
+                update_item(creds, sheet_id, item_id, data, worksheet_name)
+            set_status(item_id, "done" if changed else "not_found")
+        except Exception:
+            set_status(item_id, "not_found")
 
 
 def enrich_items_batch(items: list[dict], rate_limit_sec: float = 0.1) -> int:

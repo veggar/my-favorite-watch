@@ -88,6 +88,10 @@
     {% endif %}
   </div>
 
+  {% if import_success %}
+  <div class="alert alert-success" id="import-success-banner">{{ import_success }}</div>
+  {% endif %}
+
   {% if load_error %}
   <div class="alert alert-error">
     목록을 불러오지 못했습니다: {{ load_error }}
@@ -111,11 +115,11 @@
       <div class="card-row1" onclick="toggleCard('{{ item.id }}')">
         <div class="card-info">
           <div class="card-title-line">
-            {% if item.titleLink %}
-            <a href="{{ item.titleLink }}" target="_blank" rel="noopener" class="card-title" onclick="event.stopPropagation()">{{ item.title }}</a>
-            {% else %}
             <span class="card-title">{{ item.title }}</span>
+            {% if item.titleLink %}
+            <a href="{{ item.titleLink }}" target="_blank" rel="noopener" class="title-link-icon" onclick="event.stopPropagation()" title="TMDb 페이지 열기">🔗</a>
             {% endif %}
+            <span class="tmdb-status-icon" id="tmdb-status-{{ item.id }}" style="display:none;" title=""></span>
             <span class="badge badge-category">{{ item.category }}</span>
             {% if item.genre %}
             <span class="badge badge-genre">{{ item.genre }}</span>
@@ -224,6 +228,8 @@
     const TOGGLE_WATCHED_URL = "{{ url_for('item.toggle_watched', item_id='__ID__') }}";
     const UPDATE_URL_TEMPLATE = "{{ url_for('item.update', item_id='__ID__') }}";
     const TMDB_UPDATE_URL = "{{ url_for('item.tmdb_update', item_id='__ID__') }}";
+    const TMDB_STATUS_URL = "{{ url_for('item.tmdb_status') }}";
+    const TMDB_PENDING_IDS = {{ tmdb_pending_ids | tojson }};
   </script>
   <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>

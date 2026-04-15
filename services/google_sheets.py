@@ -7,7 +7,7 @@ DEFAULT_WORKSHEET_NAME = "My Favorite Watch"
 DELETED_WORKSHEET_NAME = "삭제"
 
 HEADERS = [
-    "id", "title", "titleLink", "genre", "category",
+    "id", "title", "titleLink", "originalTitle", "genre", "category",
     "watched", "rating", "officialRating", "watchedAt",
     "registeredAt", "updatedAt", "review", "synopsis",
 ]
@@ -90,7 +90,8 @@ def verify_sheet_access(credentials, sheet_id: str) -> dict:
 
 
 def import_from_sheet(credentials, src_sheet_id: str, src_worksheet: str,
-                      dst_sheet_id: str, dst_worksheet: str) -> int:
+                      dst_sheet_id: str, dst_worksheet: str,
+                      existing_title_map: dict | None = None) -> int:
     """다른 구글 시트의 워크시트 데이터를 현재 시트로 가져오기. 가져온 행 수 반환."""
     service = _sheets_service(credentials)
 
@@ -120,6 +121,13 @@ def import_from_sheet(credentials, src_sheet_id: str, src_worksheet: str,
 
     for src_row in data_rows:
         src_data = dict(zip(src_header, src_row + [""] * (len(src_header) - len(src_row))))
+
+        # 중복 제목 건너뛰기
+        if existing_title_map is not None:
+            title_key = src_data.get("title", "").strip().lower()
+            if title_key and title_key in existing_title_map:
+                continue
+
         # id가 없으면 새로 생성
         if not src_data.get("id"):
             src_data["id"] = str(uuid.uuid4())
@@ -195,6 +203,57 @@ def get_all_items(credentials, sheet_id: str, worksheet_name: str = DEFAULT_WORK
     return items
 
 
+def get_items_title_map(credentials, sheet_id: str,
+                        worksheet_name: str = DEFAULT_WORKSHEET_NAME) -> dict[str, dict]:
+    """제목(소문자) → item dict 매핑 반환. 중복 감지용."""
+    items = get_all_items(credentials, sheet_id, worksheet_name)
+    return {it.get("title", "").strip().lower(): it for it in items if it.get("title")}
+
+
+def append_items_batch(credentials, sheet_id: str, items: list[dict],
+                       worksheet_name: str = DEFAULT_WORKSHEET_NAME) -> list[str]:
+    """여러 항목을 한 번의 API 호출로 일괄 등록. 저장된 item_id 목록 반환."""
+    if not items:
+        return []
+    service = _sheets_service(credentials)
+    now = datetime.utcnow().isoformat()
+    rows = []
+    item_ids = []
+    for data in items:
+        item_id = data.get("id") or str(uuid.uuid4())
+        item_ids.append(item_id)
+
+        watched_val = data.get("watched", False)
+        watched_str = "true" if (watched_val is True or str(watched_val).lower() == "true") else "false"
+
+        row = [
+            item_id,
+            data.get("title", ""),
+            data.get("titleLink", ""),
+            data.get("originalTitle", ""),
+            data.get("genre", ""),
+            data.get("category", ""),
+            watched_str,
+            str(data.get("rating", "")),
+            str(data.get("officialRating", "")),
+            data.get("watchedAt", "") if watched_str == "true" else "",
+            data.get("registeredAt", now),
+            now,
+            data.get("review", ""),
+            data.get("synopsis", ""),
+        ]
+        rows.append(row)
+
+    service.spreadsheets().values().append(
+        spreadsheetId=sheet_id,
+        range=f"'{worksheet_name}'!A1",
+        valueInputOption="RAW",
+        insertDataOption="INSERT_ROWS",
+        body={"values": rows},
+    ).execute()
+    return item_ids
+
+
 def _find_row_index(credentials, sheet_id: str, item_id: str,
                     worksheet_name: str = DEFAULT_WORKSHEET_NAME) -> int | None:
     """id로 행 인덱스(1-based) 반환. 없으면 None."""
@@ -219,16 +278,20 @@ def append_item(credentials, sheet_id: str, data: dict,
     now = datetime.utcnow().isoformat()
     item_id = str(uuid.uuid4())
 
+    watched_val = data.get("watched", False)
+    watched_str = "true" if (watched_val is True or str(watched_val).lower() == "true") else "false"
+
     row = [
         item_id,
         data.get("title", ""),
         data.get("titleLink", ""),
+        data.get("originalTitle", ""),
         data.get("genre", ""),
         data.get("category", ""),
-        "true" if data.get("watched") else "false",
+        watched_str,
         str(data.get("rating", "")),
         str(data.get("officialRating", "")),
-        data.get("watchedAt", ""),
+        data.get("watchedAt", "") if watched_str == "true" else "",
         now,
         now,
         data.get("review", ""),
@@ -263,16 +326,20 @@ def update_item(credentials, sheet_id: str, item_id: str, data: dict,
     existing_row = result.get("values", [[]])[0]
     existing = dict(zip(HEADERS, existing_row + [""] * (len(HEADERS) - len(existing_row))))
 
+    watched_val = data.get("watched", existing.get("watched", False))
+    watched_str = "true" if (watched_val is True or str(watched_val).lower() == "true") else "false"
+
     row = [
         item_id,
         data.get("title", existing.get("title", "")),
         data.get("titleLink", existing.get("titleLink", "")),
+        data.get("originalTitle", existing.get("originalTitle", "")),
         data.get("genre", existing.get("genre", "")),
         data.get("category", existing.get("category", "")),
-        "true" if data.get("watched") else "false",
+        watched_str,
         str(data.get("rating", existing.get("rating", ""))),
         str(data.get("officialRating", existing.get("officialRating", ""))),
-        data.get("watchedAt", existing.get("watchedAt", "")),
+        data.get("watchedAt", existing.get("watchedAt", "")) if watched_str == "true" else "",
         existing.get("registeredAt", now),
         now,
         data.get("review", existing.get("review", "")),

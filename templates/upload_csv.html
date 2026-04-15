@@ -73,7 +73,7 @@
     </section>
 
     <section class="settings-section">
-      <h2 class="section-title">미리보기 (최대 20건)</h2>
+      <h2 class="section-title">미리보기 (최대 50건)</h2>
       <div class="preview-table-wrap">
         <table class="preview-table">
           <thead>
@@ -99,9 +99,9 @@
               <td class="td-review">{{ item.review[:30] }}{% if item.review|length > 30 %}…{% endif %}</td>
             </tr>
             {% endfor %}
-            {% if summary.total > 20 %}
+            {% if summary.total > 50 %}
             <tr class="more-row">
-              <td colspan="7">… 외 {{ summary.total - 20 }}개</td>
+              <td colspan="7">… 외 {{ summary.total - 50 }}개</td>
             </tr>
             {% endif %}
           </tbody>
