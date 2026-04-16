@@ -3,6 +3,7 @@
 ## Development Process
 * **Planning:** Describe your approach and obtain approval before writing code.
 * **Branching:** Create a branch `claude/{feature-name}` for any non-trivial changes.
+* **Tagging:** Upon merging a feature branch, create a Git tag using the format `yyyymmdd_{keyword for task}` (e.g., `20260416_tmdb_fix`)
 * **Divide & Conquer:** Break complex problems into smaller, manageable tasks.
 
 ## Testing & Quality
