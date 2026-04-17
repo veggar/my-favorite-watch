@@ -14,7 +14,7 @@ Before starting any task, read the relevant spoke documents:
 * **Workflow & Quality:** `./.claude/rules/coding.md`
 * **Security & Auth:** `./.claude/rules/security.md`
 * **Technical Implementation:** `./.claude/rules/tech-stack.md`
-* Adhere to the UI/UX design standards for functional web pages and reports: [UI/UX Standards](.claude/rules/ui-ux-standards.md)
+* Adhere to the UI/UX design standards for functional web pages and reports: `./.claude/rules/ui-ux-standards.md`
   - Ensure all dashboard and data visualization components follow the sizing, alignment, and naming conventions defined in the rules.
 
 ## Commands
