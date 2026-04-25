@@ -1,5 +1,10 @@
 @../agent-hub/CLAUDE.md
 @PRD.md
+@.claude/AGENTS.md
+@.claude/rules/coding.md
+@.claude/rules/security.md
+@.claude/rules/tech-stack.md
+@.claude/rules/ui-ux-standards.md
 
 # My Favorite Watch
 
@@ -10,16 +15,7 @@
 - 비즈니스 로직과 기능 정의는 `PRD.md`를 기준으로 확인한다.
 - Google 로그인, Google Sheets 연동, TMDb 연동, CSV 가져오기, 목록/검색/정렬/필터, 등록/수정/삭제 흐름의 데이터 정합성을 우선한다.
 - 민감한 인증 정보, OAuth 토큰, 세션, Google API 권한 변경은 보안 지침과 실제 OAuth 흐름을 함께 검토한다.
-- 프로젝트 로컬 세부 지침은 아래 문서를 함께 확인한다.
-  - `@.claude/rules/coding.md`
-  - `@.claude/rules/security.md`
-  - `@.claude/rules/tech-stack.md`
-  - `@.claude/rules/ui-ux-standards.md`
-
-## 로컬 AGENT
-
-- **@watch-tracker:** 시청 데이터 정합성 관리, Google Sheets 연동 검증
-- **@tmdb-validator:** TMDb API 연동 상태 확인, 검색 우선순위 준수 검증
+- 프로젝트 로컬 세부 지침은 이 문서 상단의 로컬 import를 통해 함께 로드한다.
 
 ## 명령어
 
