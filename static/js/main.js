@@ -68,6 +68,7 @@ function openEditModal(id) {
   document.getElementById("edit-form-review").value = item.review || "";
   document.getElementById("edit-form-synopsis").value = item.synopsis || "";
   document.getElementById("edit-original-title").value = item.title || "";
+  document.getElementById("edit-original-updated-at").value = item.updatedAt || "";
 
   const rating = parseFloat(item.rating) || 0;
   document.getElementById("edit-form-rating").value = rating;
