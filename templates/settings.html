@@ -35,7 +35,10 @@
           <div class="settings-meta">{{ user.email }}</div>
         </div>
       </div>
-      <a href="{{ url_for('auth.logout') }}" class="btn btn-danger btn-full">로그아웃</a>
+      <form method="post" action="{{ url_for('auth.logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-danger btn-full">로그아웃</button>
+      </form>
     </section>
 
     <!-- 연결된 시트 -->
@@ -51,6 +54,7 @@
 
       <!-- 문서 이름 변경 -->
       <form method="post" style="margin-bottom:8px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="rename_doc">
         <div class="inline-form">
           <input type="text" name="new_doc_title" class="form-input"
@@ -61,6 +65,7 @@
 
       <!-- 워크시트 이름 변경 -->
       <form method="post" style="margin-bottom:12px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="rename_worksheet">
         <div class="inline-form">
           <input type="text" name="new_worksheet_name" class="form-input"
@@ -75,6 +80,7 @@
 
       <!-- 시트 다시 연결 -->
       <form method="post" style="margin-top:8px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="disconnect_sheet">
         <button type="submit" class="btn btn-secondary btn-full">다른 시트 연결</button>
       </form>
@@ -84,6 +90,7 @@
     <section class="settings-section">
       <h2 class="section-title">기본 표시 설정</h2>
       <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="save_defaults">
         <div class="form-group">
           <label class="form-label">기본 정렬</label>

@@ -172,6 +172,7 @@
         <div class="detail-actions">
           <button class="btn btn-secondary btn-sm" onclick="openEditModal('{{ item.id }}')">수정</button>
           <form method="post" action="{{ url_for('item.delete', item_id=item.id) }}" onsubmit="return confirm('정말 삭제하시겠습니까?');" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-danger btn-sm">삭제</button>
           </form>
         </div>
@@ -189,6 +190,7 @@
         <button class="modal-close" onclick="closeModal('register')">✕</button>
       </div>
       <form method="post" action="{{ url_for('item.create') }}" class="item-form" id="register-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         {% with form_ns = "reg" %}{% include 'partials/item_form.html' %}{% endwith %}
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" onclick="closeModal('register')">취소</button>
@@ -206,6 +208,7 @@
         <button class="modal-close" onclick="closeModal('edit')">✕</button>
       </div>
       <form method="post" action="" class="item-form" id="edit-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="original_title" id="edit-original-title">
         <input type="hidden" name="refresh_link" id="edit-refresh-link" value="false">
         {% with form_ns = "edit" %}{% include 'partials/item_form.html' %}{% endwith %}
@@ -230,6 +233,7 @@
     const TMDB_UPDATE_URL = "{{ url_for('item.tmdb_update', item_id='__ID__') }}";
     const TMDB_STATUS_URL = "{{ url_for('item.tmdb_status') }}";
     const TMDB_PENDING_IDS = {{ tmdb_pending_ids | tojson }};
+    const CSRF_TOKEN = "{{ csrf_token() }}";
   </script>
   <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>

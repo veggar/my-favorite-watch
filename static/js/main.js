@@ -6,6 +6,11 @@ function toggleCard(id) {
   detail.style.display = visible ? "none" : "block";
 }
 
+// ===== CSRF 헤더 helper =====
+function csrfHeaders(extra = {}) {
+  return { "Content-Type": "application/json", "X-CSRF-Token": CSRF_TOKEN, ...extra };
+}
+
 // ===== 관람 여부 토글 (AJAX) =====
 async function toggleWatched(id, currentWatched) {
   const newWatched = currentWatched === "true" || currentWatched === true ? false : true;
@@ -14,7 +19,7 @@ async function toggleWatched(id, currentWatched) {
   try {
     const resp = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: csrfHeaders(),
       body: JSON.stringify({ watched: newWatched }),
     });
     const data = await resp.json();
@@ -106,7 +111,7 @@ async function tmdbUpdateItem() {
 
   try {
     const url = TMDB_UPDATE_URL.replace("__ID__", _currentEditId);
-    const resp = await fetch(url, { method: "POST" });
+    const resp = await fetch(url, { method: "POST", headers: csrfHeaders() });
     const data = await resp.json();
 
     if (data.ok) {

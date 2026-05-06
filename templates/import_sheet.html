@@ -23,6 +23,7 @@
 
     <!-- 1단계: URL 입력 -->
     <form method="post" action="{{ url_for('sheet.import_sheet') }}" class="connect-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="preview">
       <div class="form-group">
         <label class="form-label">소스 Google Sheet URL</label>
@@ -38,6 +39,7 @@
     <div class="settings-section" style="margin-top:16px;">
       <h2 class="section-title">워크시트 선택</h2>
       <form method="post" action="{{ url_for('sheet.import_sheet') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="import">
         <input type="hidden" name="src_sheet_id" value="{{ src_sheet_id }}">
         <div class="form-group">

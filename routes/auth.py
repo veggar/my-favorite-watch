@@ -1,5 +1,6 @@
 import os
-import json
+from functools import wraps
+
 from flask import Blueprint, redirect, request, session, url_for
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
@@ -12,27 +13,24 @@ SCOPES = [
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive.readonly",
+    # drive.readonly → metadata.readonly 로 최소 권한 원칙 적용
+    "https://www.googleapis.com/auth/drive.metadata.readonly",
 ]
 
-CLIENT_CONFIG = {
-    "web": {
-        "client_id": os.environ.get("GOOGLE_CLIENT_ID"),
-        "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET"),
-        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-        "token_uri": "https://oauth2.googleapis.com/token",
-        "redirect_uris": ["http://localhost:8090/auth/callback"],
-    }
-}
+REDIRECT_URI = os.environ.get("REDIRECT_URI", "http://localhost:8090/auth/callback")
 
 
 def _build_flow():
-    flow = Flow.from_client_config(
-        CLIENT_CONFIG,
-        scopes=SCOPES,
-        redirect_uri="http://localhost:8090/auth/callback",
-    )
-    return flow
+    client_config = {
+        "web": {
+            "client_id": os.environ.get("GOOGLE_CLIENT_ID"),
+            "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET"),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": [REDIRECT_URI],
+        }
+    }
+    return Flow.from_client_config(client_config, scopes=SCOPES, redirect_uri=REDIRECT_URI)
 
 
 @auth_bp.route("/login")
@@ -50,7 +48,6 @@ def google_login():
         prompt="consent",
     )
     session["oauth_state"] = state
-    # PKCE code_verifier가 생성된 경우 세션에 저장
     if hasattr(flow, "code_verifier") and flow.code_verifier:
         session["code_verifier"] = flow.code_verifier
     elif hasattr(flow.oauth2session, "_code_verifier"):
@@ -64,7 +61,6 @@ def auth_callback():
         return redirect(url_for("auth.login"))
 
     flow = _build_flow()
-    # PKCE verifier 복원
     code_verifier = session.pop("code_verifier", None)
     if code_verifier:
         flow.code_verifier = code_verifier
@@ -80,30 +76,28 @@ def auth_callback():
         "scopes": list(credentials.scopes) if credentials.scopes else SCOPES,
     }
 
-    # 사용자 정보 조회
     import googleapiclient.discovery
-    service = googleapiclient.discovery.build("oauth2", "v2", credentials=credentials)
-    user_info = service.userinfo().get().execute()
+    svc = googleapiclient.discovery.build("oauth2", "v2", credentials=credentials)
+    user_info = svc.userinfo().get().execute()
     session["user"] = {
         "email": user_info.get("email"),
         "name": user_info.get("name"),
         "picture": user_info.get("picture"),
     }
 
-    # 시트 연결 여부 확인
     if session.get("sheet_id"):
         return redirect(url_for("main.index"))
     return redirect(url_for("sheet.connect"))
 
 
-@auth_bp.route("/logout")
+@auth_bp.route("/logout", methods=["POST"])
 def logout():
     session.clear()
     return redirect(url_for("auth.login"))
 
 
 def get_credentials():
-    """세션에서 Google 인증 정보를 복원."""
+    """세션에서 Google 인증 정보를 복원하고 만료 시 갱신."""
     if "credentials" not in session:
         return None
     creds_data = session["credentials"]
@@ -115,7 +109,6 @@ def get_credentials():
         client_secret=creds_data["client_secret"],
         scopes=creds_data["scopes"],
     )
-    # 만료된 토큰 갱신
     if creds.expired and creds.refresh_token:
         creds.refresh(google.auth.transport.requests.Request())
         session["credentials"]["token"] = creds.token
@@ -123,8 +116,6 @@ def get_credentials():
 
 
 def login_required(f):
-    """로그인 필요 데코레이터."""
-    from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
         if "user" not in session or "credentials" not in session:
@@ -134,8 +125,6 @@ def login_required(f):
 
 
 def sheet_required(f):
-    """시트 연결 필요 데코레이터."""
-    from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
         if "user" not in session or "credentials" not in session:
