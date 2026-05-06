@@ -79,9 +79,19 @@
     </form>
   </div>
 
+  <!-- 탭: 작품 목록 / 삭제된 항목 -->
+  <div class="tab-bar" style="padding:0 16px;margin-bottom:4px;">
+    <a href="{{ url_for('main.index') }}"
+       class="tab-btn {% if tab == 'active' %}active{% endif %}">작품 목록</a>
+    <a href="{{ url_for('main.index', tab='deleted') }}"
+       class="tab-btn {% if tab == 'deleted' %}active{% endif %}">🗑 삭제된 항목</a>
+  </div>
+
   <!-- 결과 요약 -->
   <div class="result-summary">
-    {% if query or category_filter != '전체' or watched_filter != 'all' %}
+    {% if tab == 'deleted' %}
+    삭제된 항목 {{ total }}개
+    {% elif query or category_filter != '전체' or watched_filter != 'all' %}
     {{ filtered_count }}개 (전체 {{ total }}개)
     {% else %}
     전체 {{ total }}개
@@ -170,17 +180,43 @@
         {% endif %}
 
         <div class="detail-actions">
+          {% if tab == 'deleted' %}
+          <form method="post" action="{{ url_for('item.restore', item_id=item.id) }}" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-primary btn-sm">↩ 복구</button>
+          </form>
+          <span class="meta" style="margin-left:8px;">삭제일: {{ item.deletedAt[:10] if item.deletedAt else '-' }}</span>
+          {% else %}
           <button class="btn btn-secondary btn-sm" onclick="openEditModal('{{ item.id }}')">수정</button>
           <form method="post" action="{{ url_for('item.delete', item_id=item.id) }}" onsubmit="return confirm('정말 삭제하시겠습니까?');" style="display:inline;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-danger btn-sm">삭제</button>
           </form>
+          {% endif %}
         </div>
       </div>
 
     </div>
     {% endfor %}
   </main>
+
+  <!-- 페이지네이션 -->
+  {% set total_pages_items = filtered_count if tab == 'active' else total %}
+  {% if total_pages_items > page_size %}
+  <div class="pagination">
+    {% if offset > 0 %}
+    <a href="{{ request.path }}?{{ request.query_string.decode() | replace('&offset=' + offset|string, '') | replace('offset=' + offset|string, '') }}&offset={{ [offset - page_size, 0]|max }}"
+       class="btn btn-secondary btn-sm">← 이전</a>
+    {% endif %}
+    <span class="pagination-info">
+      {{ offset + 1 }}–{{ [offset + page_size, total_pages_items]|min }} / {{ total_pages_items }}개
+    </span>
+    {% if offset + page_size < total_pages_items %}
+    <a href="{{ request.path }}?{{ request.query_string.decode() | replace('&offset=' + offset|string, '') | replace('offset=' + offset|string, '') }}&offset={{ offset + page_size }}"
+       class="btn btn-secondary btn-sm">다음 →</a>
+    {% endif %}
+  </div>
+  {% endif %}
 
   <!-- 등록 모달 -->
   <div class="modal-overlay" id="register-overlay" style="display:none;" onclick="closeModal('register')">
@@ -210,6 +246,7 @@
       <form method="post" action="" class="item-form" id="edit-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="original_title" id="edit-original-title">
+        <input type="hidden" name="original_updated_at" id="edit-original-updated-at">
         <input type="hidden" name="refresh_link" id="edit-refresh-link" value="false">
         {% with form_ns = "edit" %}{% include 'partials/item_form.html' %}{% endwith %}
         <div class="form-actions">

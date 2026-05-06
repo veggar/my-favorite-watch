@@ -1,6 +1,6 @@
 from flask import Blueprint, request, session, redirect, url_for, jsonify
 from routes.auth import sheet_required, get_credentials
-from services.google_sheets import append_item, update_item, delete_item, update_watched, DEFAULT_WORKSHEET_NAME
+from services.google_sheets import append_item, update_item, delete_item, restore_item, update_watched, DEFAULT_WORKSHEET_NAME
 from services.tmdb import fetch_title_info
 
 item_bp = Blueprint("item", __name__)
@@ -51,6 +51,16 @@ def update(item_id):
     worksheet_name = session.get("worksheet_name", DEFAULT_WORKSHEET_NAME)
     data = _parse_form(request.form)
 
+    # Optimistic locking: 폼 제출 시점의 updatedAt과 현재 시트 값 비교
+    original_updated_at = request.form.get("original_updated_at", "").strip()
+    if original_updated_at:
+        from services.google_sheets import get_item_by_id
+        current = get_item_by_id(credentials, sheet_id, item_id, worksheet_name)
+        if current and current.get("updatedAt", "").strip() != original_updated_at:
+            from flask import flash
+            flash("다른 곳에서 먼저 수정되었습니다. 최신 내용을 확인 후 다시 시도해주세요.", "error")
+            return redirect(url_for("main.index"))
+
     if request.form.get("refresh_link") == "true" and data["title"]:
         tmdb = fetch_title_info(data["title"], data.get("category", ""))
         data["titleLink"] = tmdb.get("titleLink", "") or data["titleLink"]
@@ -68,6 +78,19 @@ def delete(item_id):
     sheet_id = session.get("sheet_id")
     worksheet_name = session.get("worksheet_name", DEFAULT_WORKSHEET_NAME)
     delete_item(credentials, sheet_id, item_id, worksheet_name)
+    return redirect(url_for("main.index"))
+
+
+@item_bp.route("/item/<item_id>/restore", methods=["POST"])
+@sheet_required
+def restore(item_id):
+    """삭제된 항목을 원래 워크시트로 복구."""
+    credentials = get_credentials()
+    sheet_id = session.get("sheet_id")
+    worksheet_name = session.get("worksheet_name", DEFAULT_WORKSHEET_NAME)
+    success = restore_item(credentials, sheet_id, item_id, worksheet_name)
+    if not success:
+        return jsonify({"ok": False, "error": "항목을 찾을 수 없습니다."}), 404
     return redirect(url_for("main.index"))
 
 
