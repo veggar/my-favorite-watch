@@ -19,6 +19,7 @@ from services.google_sheets import (
 )
 from services.tmdb import enrich_item, enrich_items_batch, enrich_items_background
 from services.tmdb_tracker import mark_pending
+from services.firestore_session import update_sheet
 
 sheet_bp = Blueprint("sheet", __name__)
 
@@ -27,6 +28,7 @@ def _save_sheet_session(sheet_id: str, sheet_title: str, worksheet_name: str):
     session["sheet_id"] = sheet_id
     session["sheet_title"] = sheet_title
     session["worksheet_name"] = worksheet_name
+    update_sheet(request.cookies.get("device_id"))
 
 
 @sheet_bp.route("/connect", methods=["GET", "POST"])

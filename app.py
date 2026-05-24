@@ -1,7 +1,10 @@
 import logging
 import os
 import secrets
+from datetime import datetime, timezone
 
+import google.auth.transport.requests
+from google.oauth2.credentials import Credentials
 from flask import Flask, jsonify, redirect, request, session, url_for
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -24,6 +27,18 @@ app = Flask(__name__)
 # 리버스 프록시(Cloud Run / Nginx) 뒤에서 올바른 IP · 프로토콜 처리
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
+# ── Firestore (refresh token 영구 저장) ────────────────────────────────────
+from services.firestore_session import get_db as _get_fs_db  # noqa: E402
+
+_SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive.metadata.readonly",
+]
+_NO_RESTORE_PATHS = {"/login", "/auth/google", "/auth/callback", "/logout"}
+
 # secret_key: 운영 환경에서 미설정 시 즉시 실패
 _secret_key = os.environ.get("FLASK_SECRET_KEY")
 if not _secret_key:
@@ -43,6 +58,58 @@ app.config.update(
 # ── 로깅 ──────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.DEBUG if IS_DEV else logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+# ── Firestore 세션 자동 복원 ──────────────────────────────────────────────
+@app.before_request
+def auto_restore_session():
+    """device_id 쿠키로 Firestore에서 refresh_token을 찾아 세션을 자동 복원."""
+    if "credentials" in session:
+        return
+    if request.path in _NO_RESTORE_PATHS or request.path.startswith("/static/"):
+        return
+    db = _get_fs_db()
+    if db is None:
+        return
+    device_id = request.cookies.get("device_id")
+    if not device_id:
+        return
+    try:
+        doc = db.collection("sessions").document(device_id).get()
+        if not doc.exists:
+            return
+        data = doc.to_dict()
+        refresh_token = data.get("refresh_token")
+        if not refresh_token:
+            return
+        creds = Credentials(
+            token=None,
+            refresh_token=refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=os.environ.get("GOOGLE_CLIENT_ID"),
+            client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
+            scopes=_SCOPES,
+        )
+        creds.refresh(google.auth.transport.requests.Request())
+        session.permanent = True
+        session["credentials"] = {
+            "token": creds.token,
+            "refresh_token": creds.refresh_token,
+            "token_uri": creds.token_uri,
+            "client_id": creds.client_id,
+            "client_secret": creds.client_secret,
+            "scopes": _SCOPES,
+        }
+        session["user"] = data.get("user", {})
+        session["sheet_id"] = data.get("sheet_id", "")
+        session["sheet_title"] = data.get("sheet_title", "")
+        session["worksheet_name"] = data.get("worksheet_name", "")
+        db.collection("sessions").document(device_id).update({
+            "refresh_token": creds.refresh_token,
+            "updated_at": datetime.now(timezone.utc),
+        })
+    except Exception:
+        logger.warning("Firestore session restore failed", exc_info=True)
 
 
 # ── CSRF 보호 ─────────────────────────────────────────────────────────────

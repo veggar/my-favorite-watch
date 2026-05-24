@@ -1,10 +1,13 @@
 import os
+import secrets
 from functools import wraps
 
-from flask import Blueprint, redirect, request, session, url_for
+from flask import Blueprint, make_response, redirect, request, session, url_for
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 import google.auth.transport.requests
+
+from services.firestore_session import save_session, delete_session
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -85,15 +88,31 @@ def auth_callback():
         "picture": user_info.get("picture"),
     }
 
-    if session.get("sheet_id"):
-        return redirect(url_for("main.index"))
-    return redirect(url_for("sheet.connect"))
+    # Firestore에 refresh_token 저장 + device_id 쿠키 발급
+    device_id = request.cookies.get("device_id") or secrets.token_urlsafe(32)
+    save_session(device_id, credentials.refresh_token, session["user"])
+
+    dest = url_for("main.index") if session.get("sheet_id") else url_for("sheet.connect")
+    resp = make_response(redirect(dest))
+    resp.set_cookie(
+        "device_id",
+        device_id,
+        max_age=60 * 60 * 24 * 90,  # 90일
+        httponly=True,
+        samesite="Lax",
+        secure=not (os.environ.get("APP_ENV", "production").lower() in ("development", "dev", "local")),
+    )
+    return resp
 
 
 @auth_bp.route("/logout", methods=["POST"])
 def logout():
+    device_id = request.cookies.get("device_id")
+    delete_session(device_id)
     session.clear()
-    return redirect(url_for("auth.login"))
+    resp = make_response(redirect(url_for("auth.login")))
+    resp.delete_cookie("device_id")
+    return resp
 
 
 def get_credentials():
