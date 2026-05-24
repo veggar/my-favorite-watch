@@ -11,10 +11,13 @@
   <!-- 상단 헤더 -->
   <header class="app-header">
     <div class="header-left">
-      <span class="app-name">🎬 My Favorite Watch</span>
+      <div class="app-title-row">
+        <span class="app-name">🎬 My Favorite Watch</span>
+        <span class="app-version">{{ app_version }}</span>
+      </div>
+      <span class="app-username">{{ user.name }}</span>
     </div>
     <div class="header-right">
-      <span class="user-name">{{ user.name }}</span>
       <a href="{{ url_for('settings.settings') }}" class="btn-icon" title="설정">⚙️</a>
     </div>
   </header>

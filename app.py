@@ -123,7 +123,8 @@ def get_csrf_token() -> str:
 
 @app.context_processor
 def inject_globals():
-    return {"csrf_token": get_csrf_token}
+    from version import VERSION
+    return {"csrf_token": get_csrf_token, "app_version": VERSION}
 
 
 @app.before_request
