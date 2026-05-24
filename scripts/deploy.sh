@@ -45,13 +45,16 @@ echo ""
 
 cd "$PROJECT_ROOT"
 
+# Cloud Run용 REDIRECT_URI (로컬 .env의 localhost 값을 Cloud Run URL로 대체)
+CLOUDRUN_REDIRECT_URI="https://${SERVICE}-641162137323.${REGION}.run.app/auth/callback"
+
 # Cloud Build + Artifact Registry 권한 확인 후 배포
 gcloud run deploy "$SERVICE" \
   --source . \
   --region "$REGION" \
   --project "$PROJECT" \
   --allow-unauthenticated \
-  --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET},FLASK_SECRET_KEY=${FLASK_SECRET_KEY},TMDB_API_KEY=${TMDB_API_KEY},REDIRECT_URI=${REDIRECT_URI},APP_ENV=production"
+  --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET},FLASK_SECRET_KEY=${FLASK_SECRET_KEY},TMDB_API_KEY=${TMDB_API_KEY},REDIRECT_URI=${CLOUDRUN_REDIRECT_URI},APP_ENV=production"
 
 echo ""
 echo "✅ 배포 완료"
