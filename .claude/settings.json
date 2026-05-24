@@ -15,7 +15,8 @@
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('scope:', d.get\\('scope',''\\)\\)\")",
       "WebFetch(domain:github.com)",
       "Bash(gcloud firestore *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(bash /Users/veggar/Documents/work/agent-system/second-by-claude-code/scripts/deploy.sh)"
     ],
     "additionalDirectories": [
       "/Users/veggar/Documents/work/agent-system/second-by-claude-code/.git"
