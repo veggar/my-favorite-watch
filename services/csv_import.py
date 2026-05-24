@@ -152,6 +152,69 @@ def parse_csv(file_content: bytes, encoding: str = "utf-8") -> list[dict]:
     return items
 
 
+def parse_xlsx(file_content: bytes) -> list[dict]:
+    """
+    Excel(.xlsx/.xls) 바이트를 파싱하여 앱 데이터 구조 목록으로 반환.
+    CSV와 동일한 컬럼 순서를 기대: 관람여부, 장르, 제목, 평점, 등록날짜, 관람날짜, 간단후기
+    """
+    import io
+    import openpyxl
+
+    wb = openpyxl.load_workbook(io.BytesIO(file_content), read_only=True, data_only=True)
+    ws = wb.active
+
+    now = datetime.utcnow().isoformat()
+    items = []
+    first_row = True
+
+    for row in ws.iter_rows(values_only=True):
+        # 첫 행이 헤더인지 확인
+        if first_row:
+            first_row = False
+            first_val = str(row[0] or "").strip().lower()
+            if first_val in ("관람", "watched", "관람여부", ""):
+                continue  # 헤더 스킵
+
+        padded = [str(cell) if cell is not None else "" for cell in row]
+        padded += [""] * max(0, 7 - len(padded))
+
+        watched_raw = padded[0].strip().lower()
+        genre_raw   = padded[1].strip()
+        title       = padded[2].strip()
+        rating_raw  = padded[3].strip()
+        reg_raw     = padded[4].strip()
+        watch_raw   = padded[5].strip()
+        review      = padded[6].strip()
+
+        if not title:
+            continue
+
+        watched = watched_raw in ("v", "✓", "true", "y", "yes", "o")
+        category, genre = _infer_category(genre_raw)
+        rating = _parse_grade(rating_raw)
+        registered_at = _parse_date(reg_raw) or now
+        watched_at = _parse_date(watch_raw) if watched else ""
+
+        items.append({
+            "id":           str(uuid.uuid4()),
+            "title":        title,
+            "titleLink":    "",
+            "genre":        genre,
+            "category":     category,
+            "watched":      "true" if watched else "false",
+            "rating":       rating,
+            "officialRating": "",
+            "watchedAt":    watched_at,
+            "registeredAt": registered_at,
+            "updatedAt":    now,
+            "review":       review,
+            "synopsis":     "",
+        })
+
+    wb.close()
+    return items
+
+
 def summarize(items: list[dict]) -> dict:
     """파싱 결과 요약 통계."""
     watched = sum(1 for it in items if it["watched"] == "true")

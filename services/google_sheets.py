@@ -203,6 +203,36 @@ def get_all_items(credentials, sheet_id: str, worksheet_name: str = DEFAULT_WORK
     return items
 
 
+def get_deleted_items(credentials, sheet_id: str) -> list[dict]:
+    """'삭제' 워크시트에서 삭제된 항목 목록 조회."""
+    service = _sheets_service(credentials)
+    try:
+        result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id,
+            range=f"'{DELETED_WORKSHEET_NAME}'",
+        ).execute()
+    except Exception:
+        return []
+    rows = result.get("values", [])
+    if len(rows) < 2:
+        return []
+
+    header = rows[0]
+    items = []
+    for row in rows[1:]:
+        padded = row + [""] * (len(header) - len(row))
+        item = dict(zip(header, padded))
+        items.append(item)
+    return items
+
+
+def get_item_by_id(credentials, sheet_id: str, item_id: str,
+                   worksheet_name: str = DEFAULT_WORKSHEET_NAME) -> dict | None:
+    """ID로 단일 항목 조회 (optimistic locking 비교용)."""
+    items = get_all_items(credentials, sheet_id, worksheet_name)
+    return next((it for it in items if it.get("id") == item_id), None)
+
+
 def get_items_title_map(credentials, sheet_id: str,
                         worksheet_name: str = DEFAULT_WORKSHEET_NAME) -> dict[str, dict]:
     """제목(소문자) → item dict 매핑 반환. 중복 감지용."""
@@ -405,6 +435,54 @@ def delete_item(credentials, sheet_id: str, item_id: str,
         }]
     }
     service.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=body).execute()
+    return True
+
+
+def restore_item(credentials, sheet_id: str, item_id: str,
+                 worksheet_name: str = DEFAULT_WORKSHEET_NAME) -> bool:
+    """'삭제' 워크시트의 항목을 원래 워크시트로 복구."""
+    row_index = _find_row_index(credentials, sheet_id, item_id, DELETED_WORKSHEET_NAME)
+    if row_index is None:
+        return False
+
+    service = _sheets_service(credentials)
+
+    # 삭제 시트에서 데이터 읽기 (deletedAt 컬럼 제외)
+    result = service.spreadsheets().values().get(
+        spreadsheetId=sheet_id,
+        range=f"'{DELETED_WORKSHEET_NAME}'!A{row_index}:{chr(64+len(HEADERS))}{row_index}",
+    ).execute()
+    row_data = result.get("values", [[]])[0]
+
+    # 원래 워크시트에 복구 (updatedAt 갱신)
+    restored = row_data + [""] * (len(HEADERS) - len(row_data))
+    restored[HEADERS.index("updatedAt")] = datetime.utcnow().isoformat()
+
+    service.spreadsheets().values().append(
+        spreadsheetId=sheet_id,
+        range=f"'{worksheet_name}'!A1",
+        valueInputOption="RAW",
+        insertDataOption="INSERT_ROWS",
+        body={"values": [restored]},
+    ).execute()
+
+    # 삭제 시트에서 행 제거
+    spreadsheet = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+    deleted_sheet = next(
+        (s for s in spreadsheet.get("sheets", [])
+         if s["properties"]["title"] == DELETED_WORKSHEET_NAME),
+        None,
+    )
+    if deleted_sheet:
+        gid = deleted_sheet["properties"]["sheetId"]
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=sheet_id,
+            body={"requests": [{"deleteDimension": {"range": {
+                "sheetId": gid, "dimension": "ROWS",
+                "startIndex": row_index - 1, "endIndex": row_index,
+            }}}]},
+        ).execute()
+
     return True
 
 

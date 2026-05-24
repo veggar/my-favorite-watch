@@ -38,10 +38,11 @@
         관람여부 <code>v</code> = 관람 완료, 빈값 = 보고 싶어요.
       </p>
       <form method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="preview">
         <div class="form-group">
-          <label class="form-label">CSV 파일 (.csv)</label>
-          <input type="file" name="csv_file" accept=".csv" class="form-input" required>
+          <label class="form-label">파일 (.csv, .xlsx)</label>
+          <input type="file" name="csv_file" accept=".csv,.xlsx,.xls" class="form-input" required>
         </div>
         <button type="submit" class="btn btn-primary btn-full">미리보기</button>
       </form>
@@ -113,6 +114,7 @@
         기존 데이터는 유지되고 새 행으로 추가됩니다.
       </p>
       <form method="post" onsubmit="this.querySelector('button').disabled=true; document.getElementById('loading-overlay').style.display='flex';">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="import">
         <button type="submit" class="btn btn-primary btn-full">{{ summary.total }}개 등록하기</button>
       </form>

@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, session
 from routes.auth import sheet_required, get_credentials
-from services.google_sheets import get_all_items, DEFAULT_WORKSHEET_NAME
+from services.google_sheets import get_all_items, get_deleted_items, DEFAULT_WORKSHEET_NAME
 
 main_bp = Blueprint("main", __name__)
 
@@ -48,16 +48,51 @@ def _apply_filters_and_sort(items, query, scope, category_filter, watched_filter
     return items
 
 
+PAGE_SIZE = 50  # 한 페이지에 보여줄 최대 항목 수
+
+
 @main_bp.route("/")
 @sheet_required
 def index():
     credentials = get_credentials()
     sheet_id = session.get("sheet_id")
     worksheet_name = session.get("worksheet_name", DEFAULT_WORKSHEET_NAME)
+    tab = request.args.get("tab", "active")
+    if tab not in ("active", "deleted"):
+        tab = "active"
+
+    offset = max(0, request.args.get("offset", 0, type=int))
+
+    load_error = None
+    if tab == "deleted":
+        try:
+            deleted_items = get_deleted_items(credentials, sheet_id)
+        except Exception as e:
+            deleted_items = []
+            load_error = str(e)
+        page_items = deleted_items[offset: offset + PAGE_SIZE]
+        return render_template(
+            "list.html",
+            items=page_items,
+            total=len(deleted_items),
+            filtered_count=len(deleted_items),
+            tab=tab,
+            offset=offset,
+            page_size=PAGE_SIZE,
+            user=session.get("user"),
+            sheet_title=session.get("sheet_title", ""),
+            query="", scope="title",
+            category_filter="전체", watched_filter="all",
+            sort_key="registered_desc",
+            sort_options=SORT_OPTIONS,
+            load_error=load_error,
+            categories=["전체", "영화", "드라마", "다큐", "애니", "기타"],
+            import_success=None,
+            tmdb_pending_ids=[],
+        )
 
     try:
         items = get_all_items(credentials, sheet_id, worksheet_name)
-        load_error = None
     except Exception as e:
         items = []
         load_error = str(e)
@@ -70,14 +105,20 @@ def index():
 
     filtered = _apply_filters_and_sort(items, query, scope, category_filter, watched_filter, sort_key)
 
+    # 페이지네이션
+    page_items = filtered[offset: offset + PAGE_SIZE]
+
     import_success = session.pop("import_success", None)
     tmdb_pending_ids = session.pop("tmdb_pending_ids", [])
 
     return render_template(
         "list.html",
-        items=filtered,
+        items=page_items,
         total=len(items),
         filtered_count=len(filtered),
+        tab=tab,
+        offset=offset,
+        page_size=PAGE_SIZE,
         user=session.get("user"),
         sheet_title=session.get("sheet_title", ""),
         query=query,

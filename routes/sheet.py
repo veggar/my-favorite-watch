@@ -19,6 +19,7 @@ from services.google_sheets import (
 )
 from services.tmdb import enrich_item, enrich_items_batch, enrich_items_background
 from services.tmdb_tracker import mark_pending
+from services.firestore_session import update_sheet
 
 sheet_bp = Blueprint("sheet", __name__)
 
@@ -27,6 +28,7 @@ def _save_sheet_session(sheet_id: str, sheet_title: str, worksheet_name: str):
     session["sheet_id"] = sheet_id
     session["sheet_title"] = sheet_title
     session["worksheet_name"] = worksheet_name
+    update_sheet(request.cookies.get("device_id"))
 
 
 @sheet_bp.route("/connect", methods=["GET", "POST"])
@@ -152,8 +154,8 @@ def import_sheet():
 @sheet_bp.route("/upload-csv", methods=["GET", "POST"])
 @login_required
 def upload_csv():
-    """CSV 파일을 파싱해 미리보기 후 Google Sheet에 일괄 등록."""
-    from services.csv_import import parse_csv, summarize
+    """CSV / Excel 파일을 파싱해 미리보기 후 Google Sheet에 일괄 등록."""
+    from services.csv_import import parse_csv, parse_xlsx, summarize
     from services.google_sheets import append_item
 
     error = None
@@ -166,17 +168,21 @@ def upload_csv():
         if action == "preview":
             file = request.files.get("csv_file")
             if not file or not file.filename:
-                error = "CSV 파일을 선택해주세요."
+                error = "파일을 선택해주세요."
             else:
                 try:
+                    filename = file.filename.lower()
                     content = file.read()
-                    items = parse_csv(content)
+                    if filename.endswith((".xlsx", ".xls")):
+                        items = parse_xlsx(content)
+                    else:
+                        items = parse_csv(content)
                     if not items:
                         error = "파일에서 유효한 데이터를 찾을 수 없습니다."
                     else:
                         summary = summarize(items)
-                        preview = items  # 전체 미리보기
-                        session["csv_import_data"] = items  # 임시 저장
+                        preview = items
+                        session["csv_import_data"] = items
                 except Exception as e:
                     error = f"파싱 실패: {e}"
 

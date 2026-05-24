@@ -28,6 +28,7 @@
       <p class="connect-desc">연결할 Google Sheet URL을 입력하세요.<br>
         지정한 워크시트가 없으면 자동으로 생성됩니다.</p>
       <form method="post" action="{{ url_for('sheet.connect') }}" class="connect-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="connect">
         <div class="form-group">
           <label class="form-label">Google Sheet URL</label>
@@ -48,6 +49,7 @@
     <div id="tab-create" class="tab-content" style="display:none;">
       <p class="connect-desc">새 Google Sheet 문서를 만들고 바로 시작하세요.</p>
       <form method="post" action="{{ url_for('sheet.connect') }}" class="connect-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="create">
         <div class="form-group">
           <label class="form-label">문서 이름</label>
@@ -64,7 +66,10 @@
     </div>
 
     <div class="connect-footer">
-      <a href="{{ url_for('auth.logout') }}" class="link-muted">로그아웃</a>
+      <form method="post" action="{{ url_for('auth.logout') }}" style="display:inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="link-muted" style="background:none;border:none;cursor:pointer;padding:0;">로그아웃</button>
+      </form>
     </div>
   </div>
 

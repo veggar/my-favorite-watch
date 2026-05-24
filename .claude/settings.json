@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gcloud config *)",
+      "Bash(git merge *)",
+      "Bash(rm -f /Users/veggar/Documents/work/agent-system/second-by-claude-code/.git/HEAD.lock /Users/veggar/Documents/work/agent-system/second-by-claude-code/.git/index.lock && git status)",
+      "Bash(git commit -m ' *)",
+      "Bash(gcloud services *)",
+      "Bash(gcloud billing *)",
+      "Bash(python3 -c \"import secrets; print\\(secrets.token_hex\\(32\\)\\)\")",
+      "Bash(chmod +x /Users/veggar/Documents/work/agent-system/second-by-claude-code/scripts/deploy.sh)",
+      "Bash(APP_ENV=development REDIRECT_URI=http://localhost:8090/auth/callback FLASK_SECRET_KEY=test123 GOOGLE_CLIENT_ID=test GOOGLE_CLIENT_SECRET=test python3 -c \"import app; print\\('Flask app imports OK'\\)\")",
+      "Bash(gcloud auth *)",
+      "Bash(curl -s \"https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=$\\(gcloud auth print-access-token \\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('scope:', d.get\\('scope',''\\)\\)\")"
+    ],
+    "additionalDirectories": [
+      "/Users/veggar/Documents/work/agent-system/second-by-claude-code/.git"
+    ]
+  }
+}

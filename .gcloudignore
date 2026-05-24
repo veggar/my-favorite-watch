@@ -1,0 +1,13 @@
+.gcloudignore
+.git
+.gitignore
+.env
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+flask_session/
+.venv/
+venv/
+docs/
+scripts/commit_all.sh
