@@ -1,6 +1,6 @@
 # My Favorite Watch — 구글 시트 기반 영상 작품 기록 관리 앱 기능 정의서
 
-> 마지막 업데이트: 2026-04-15
+> 마지막 업데이트: 2026-05-25
 
 ---
 
@@ -22,7 +22,7 @@
 - Google 로그인
 - Google Sheet 연결 (신규 생성 / 기존 URL 연결)
 - 타 Google Sheet에서 데이터 가져오기
-- CSV 파일 가져오기 (인코딩 자동 감지, 중복 건너뜀)
+- CSV / Excel 파일 가져오기 (인코딩 자동 감지, 중복 건너뜀)
 - 목록 조회
 - 검색 (제목 / 전체 필드)
 - 카테고리 · 관람 여부 필터
@@ -30,7 +30,10 @@
 - 등록 (TMDb 자동 연결 포함)
 - 수정 (수정 모달, TMDb 수동 업데이트 버튼)
 - 삭제 (삭제 워크시트 이관)
+- 삭제된 항목 조회 및 복구
 - 설정 관리 (문서명 · 워크시트명 변경, 기본 정렬 저장)
+- Firestore 기반 refresh_token 영구 세션 복원
+- Cloud Run 배포 구성
 
 ### 2.2 제외 범위
 
@@ -79,12 +82,14 @@
 ### 4.1 로그인 방식
 
 - Google OAuth 2.0 (PKCE 지원)
-- 필요 스코프: `openid`, `userinfo.email`, `userinfo.profile`, `spreadsheets`, `drive.readonly`
+- 필요 스코프: `openid`, `userinfo.email`, `userinfo.profile`, `spreadsheets`, `drive.metadata.readonly`
 
 ### 4.2 세션 관리
 
-- 서버사이드 파일시스템 세션 (`flask-session`) 사용
-- 쿠키 4KB 제한 우회 (대용량 CSV 임시 저장 포함)
+- Flask 세션에 현재 요청 처리에 필요한 사용자·시트·OAuth 상태 저장
+- Firestore `refresh-token` 데이터베이스에 `device_id`별 refresh_token 저장
+- `device_id` 쿠키는 HttpOnly / SameSite=Lax / 운영 환경 Secure 옵션으로 90일 유지
+- Flask 세션이 비어 있어도 `device_id` 쿠키와 Firestore 저장값으로 Google 인증 세션 자동 복원
 - 토큰 만료 시 자동 갱신
 
 ### 4.3 시트 접근 권한
@@ -105,7 +110,7 @@
 | 시트 연결/생성 | `/connect` |
 | 타 시트 가져오기 | `/import-sheet` |
 | CSV 가져오기 | `/upload-csv` |
-| 목록 (메인) | `/` |
+| 목록 (메인 / 삭제된 항목 탭) | `/` |
 | 설정 | `/settings` |
 
 등록 및 수정은 목록 화면 내 슬라이드 업 모달로 처리한다.
@@ -116,10 +121,11 @@
 
 ### 6.1 기본 구조
 
-- 상단 고정 헤더: 앱명(My Favorite Watch), 로그인 계정명, 설정 버튼
+- 상단 고정 헤더: 앱명(My Favorite Watch), 앱 버전, 로그인 계정명, 설정 버튼
 - 툴바: 검색창 + 범위 셀렉트 / 카테고리 칩 / 관람 여부 칩 / 정렬 셀렉트 / `+ 등록` 버튼
 - 결과 요약 (필터 적용 시 "N개 (전체 M개)")
 - 작품 카드 목록
+- 탭: 작품 목록 / 삭제된 항목
 
 ### 6.2 작품 카드 규칙
 
@@ -306,6 +312,13 @@
 - 원본 워크시트에서 행 제거
 - `삭제` 워크시트에 복사본 + `deletedAt` 필드 추가 이관
 
+### 12.3 삭제된 항목 복구
+
+- 목록 화면의 `삭제된 항목` 탭에서 삭제 워크시트 데이터를 조회
+- 복구 버튼 클릭 시 `삭제` 워크시트의 행을 원본 워크시트로 다시 추가
+- 복구된 항목은 `updatedAt`을 복구 시점으로 갱신
+- 복구 완료 후 `삭제` 워크시트의 해당 행 제거
+
 ---
 
 ## 13. 데이터 가져오기
@@ -323,9 +336,15 @@
 4. 성공 시 즉시 목록으로 리디렉션
 5. TMDb 보강은 **비동기 백그라운드** 실행
 
-### 13.3 CSV 파일 가져오기 (`/upload-csv`)
+### 13.3 CSV / Excel 파일 가져오기 (`/upload-csv`)
 
-**지원 CSV 형식**
+**지원 파일**
+
+- `.csv`
+- `.xlsx`
+- `.xls`
+
+**지원 컬럼 형식**
 
 | 컬럼 위치 | 필드 |
 |-----------|------|
@@ -343,7 +362,7 @@
 
 **가져오기 흐름**
 
-1. 파일 선택 → 미리보기 (최대 50건) + 요약 통계 (전체/관람/보고싶어요/카테고리별)
+1. CSV 또는 Excel 파일 선택 → 미리보기 (최대 50건) + 요약 통계 (전체/관람/보고싶어요/카테고리별)
 2. 등록하기 클릭 → **중복 확인** (기존 제목 소문자 비교) → **배치 저장** (단일 API 호출)
 3. 즉시 목록으로 리디렉션 (저장 완료)
 4. **비동기 백그라운드**로 TMDb 보강 진행
@@ -395,7 +414,20 @@
 | `import_success` | 가져오기 완료 메시지 (목록 배너용) |
 | `tmdb_pending_ids` | 비동기 TMDb 보강 대기 중인 item_id 목록 |
 
-### 16.2 메모리 상태 (`services/tmdb_tracker.py`)
+### 16.2 Firestore 영구 세션 상태 (`services/firestore_session.py`)
+
+| 키 | 내용 |
+|----|------|
+| `device_id` | 브라우저 식별용 쿠키 값 |
+| `email` | 로그인 사용자 이메일 |
+| `refresh_token` | Google OAuth refresh_token |
+| `user` | 사용자 이메일/이름/사진 |
+| `sheet_id` | 연결된 Google Sheet ID |
+| `sheet_title` | 연결된 문서 이름 |
+| `worksheet_name` | 연결된 워크시트 이름 |
+| `updated_at` | Firestore 세션 갱신 시각 |
+
+### 16.3 메모리 상태 (`services/tmdb_tracker.py`)
 
 - 서버 메모리 딕셔너리로 item_id별 TMDb 진행 상태 추적
 - 상태값: `pending` / `searching` / `done` / `not_found`
@@ -413,15 +445,21 @@
 | 목록 로드 실패 | 오류 배너 + 재시도 버튼 |
 | TMDb 검색 실패 | 링크 없이 작품 저장, 사용자 알림 없음 |
 | CSV 인코딩 불인식 | "UTF-8 또는 EUC-KR 파일 사용 안내" |
+| CSRF 검증 실패 | "잘못된 요청입니다. 페이지를 새로고침 후 다시 시도해주세요." 안내 |
+| 수정 충돌 | `updatedAt` 비교 후 최신 내용 확인 안내 |
 
 ---
 
 ## 18. 보안
 
 - Google OAuth 2.0 + PKCE 인증
+- OAuth 권한은 Drive 전체 읽기 대신 `drive.metadata.readonly`로 최소화
 - 외부 API 키 (TMDb, Google) 는 `.env` 서버 환경 변수 관리
 - 클라이언트에 API 키 미노출
-- 개발 환경: `OAUTHLIB_INSECURE_TRANSPORT=1` (HTTP 허용), `OAUTHLIB_RELAX_TOKEN_SCOPE=1`
+- 운영 환경에서 `FLASK_SECRET_KEY` 미설정 시 앱 시작 실패
+- POST/PUT/PATCH/DELETE 요청 CSRF 토큰 검증
+- 세션 쿠키: HttpOnly, SameSite=Lax, 운영 환경 Secure
+- 개발 환경에서만 `OAUTHLIB_INSECURE_TRANSPORT=1` (HTTP 허용), `OAUTHLIB_RELAX_TOKEN_SCOPE=1`
 
 ---
 
@@ -429,9 +467,10 @@
 
 ### 19.1 프레임워크
 
-- **언어**: Python 3.11 (pyenv)
+- **언어**: Python 3.11+ (로컬), Python 3.12-slim (Docker)
 - **웹 프레임워크**: Flask 3.x (SSR, Jinja2 템플릿)
-- **세션**: flask-session 0.8 (파일시스템 기반 서버사이드)
+- **세션**: Flask 세션 + Firestore refresh_token 영구 저장
+- **배포 런타임**: gunicorn + Cloud Run
 
 ### 19.2 외부 서비스
 
@@ -441,23 +480,27 @@
 | Google Sheets API v4 | 데이터 읽기/쓰기 |
 | Google Drive API | 시트 생성, 문서명 변경 |
 | TMDb API v3 | 작품 링크·공식 평점·원제 수집 |
+| Firestore | refresh_token 기반 세션 복원 |
 
 ### 19.3 주요 패키지
 
 ```
-flask==3.x
-flask-session==0.8.0
-google-auth==2.x
-google-auth-oauthlib==1.x
-google-api-python-client==2.x
-requests==2.x
-python-dotenv==1.x
+flask==3.1.0
+gunicorn==23.0.0
+google-auth==2.38.0
+google-auth-oauthlib==1.2.1
+google-api-python-client==2.166.0
+google-cloud-firestore==2.20.2
+requests==2.32.3
+python-dotenv==1.1.0
+Werkzeug==3.1.3
+openpyxl==3.1.5
 ```
 
 ### 19.4 파일 구조
 
 ```
-app.py                      # Flask 앱 팩토리, flask-session 설정
+app.py                      # Flask 앱, 보안 설정, Firestore 세션 자동 복원
 routes/
   auth.py                   # Google OAuth, 데코레이터
   main.py                   # 목록 화면
@@ -466,9 +509,10 @@ routes/
   settings.py               # 설정 화면
 services/
   google_sheets.py          # Sheets API 래퍼 (CRUD, 배치 저장, 삭제 이관)
+  firestore_session.py      # Firestore refresh_token 세션 저장/갱신/삭제
   tmdb.py                   # TMDb 검색, 동기/비동기 보강
   tmdb_tracker.py           # 비동기 TMDb 진행 상태 추적
-  csv_import.py             # CSV 파싱, 날짜·평점 변환
+  csv_import.py             # CSV/Excel 파싱, 날짜·평점 변환
 templates/
   list.html                 # 목록 메인
   partials/item_form.html   # 등록/수정 공통 폼
@@ -479,15 +523,20 @@ templates/
 static/
   css/style.css
   js/main.js
-flask_session/              # 서버사이드 세션 파일 (gitignore)
+Dockerfile                  # Cloud Run 컨테이너 이미지
+scripts/deploy.sh           # Cloud Run 배포 스크립트
+version.py                  # 앱 버전
 ```
 
 ### 19.5 런타임 설정
 
 - 포트: 8090
 - 실행: `export $(cat .env | xargs) && python3 app.py`
-- 필수 환경 변수: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `FLASK_SECRET_KEY`
+- Cloud Run 실행: `gunicorn --bind "0.0.0.0:${PORT}" --workers 2 --threads 8 --timeout 60 app:app`
+- 필수 환경 변수: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `FLASK_SECRET_KEY`, `REDIRECT_URI`
 - 선택 환경 변수: `TMDB_API_KEY` (미설정 시 TMDb 기능 전체 스킵)
+- 배포 선택 환경 변수: `GOOGLE_CLOUD_PROJECT`, `CLOUD_RUN_REGION`
+- 환경 구분: `APP_ENV=development|production`
 
 ---
 
@@ -506,11 +555,13 @@ flask_session/              # 서버사이드 세션 파일 (gitignore)
 | 수정 모달 (원제·링크·평점 포함) | ✅ |
 | 수정 모달 TMDb 업데이트 버튼 | ✅ |
 | 삭제 (삭제 워크시트 이관) | ✅ |
+| 삭제된 항목 조회 및 복구 | ✅ |
 | 카드 클릭 후기/요약 펼침 | ✅ |
 | 관람 여부 토글 (AJAX) | ✅ |
 | 카드 내 🔗 아이콘으로 TMDb 링크 표시 | ✅ |
 | 타 Google Sheet 가져오기 (중복 건너뜀) | ✅ |
 | CSV 가져오기 (문자 평점·날짜 변환, 50건 미리보기) | ✅ |
+| Excel(.xlsx/.xls) 가져오기 | ✅ |
 | CSV "보고 싶어요" 항목 정상 가져오기 | ✅ |
 | 배치 저장 (단일 API 호출) | ✅ |
 | 비동기 TMDb 보강 (가져오기 후 백그라운드) | ✅ |
@@ -518,4 +569,8 @@ flask_session/              # 서버사이드 세션 파일 (gitignore)
 | 진행률 % 배너 | ✅ |
 | 원제(originalTitle) 수집 및 표시 | ✅ |
 | 설정 (문서명·워크시트명 변경, 기본 정렬) | ✅ |
-| 서버사이드 세션 (쿠키 용량 제한 해소) | ✅ |
+| Firestore refresh_token 영구 세션 복원 | ✅ |
+| CSRF 및 세션 쿠키 보안 설정 | ✅ |
+| 수정 충돌 방지(optimistic locking) | ✅ |
+| Cloud Run 배포 구성 | ✅ |
+| 헤더 버전·사용자명 표시 | ✅ |
