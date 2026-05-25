@@ -1,14 +1,14 @@
-@../agent-hub/AGENTS.md
+@../agent-hub/.claude/AGENTS.md
 @PRD.md
-@.codex/AGENTS.md
-@.codex/rules/coding.md
-@.codex/rules/security.md
-@.codex/rules/tech-stack.md
-@.codex/rules/ui-ux-standards.md
+@.claude/AGENTS.md
+@.claude/rules/coding.md
+@.claude/rules/security.md
+@.claude/rules/tech-stack.md
+@.claude/rules/ui-ux-standards.md
 
 # My Favorite Watch
 
-이 문서는 프로젝트 특화 보완 지침만 관리한다. 전역 지침, 공통 agent, 공통 command, 공통 rules는 `@../agent-hub/AGENTS.md`를 기준으로 따른다.
+이 문서는 프로젝트 특화 보완 지침만 관리한다. 전역 지침, 공통 agent, 공통 command, 공통 rules는 `@../agent-hub/.claude/AGENTS.md`를 기준으로 따른다.
 
 ## Core Directives
 
