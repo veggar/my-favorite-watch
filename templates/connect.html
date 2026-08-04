@@ -3,8 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>시트 연결 — My Favorite Watch</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    .setup-step { text-align: center; }
+    .setup-spinner {
+      width: 44px; height: 44px; margin: 0 auto;
+      border: 4px solid #e0e0e0; border-top-color: #444;
+      border-radius: 50%; animation: mfw-spin 0.9s linear infinite;
+    }
+    @keyframes mfw-spin { to { transform: rotate(360deg); } }
+    .setup-icon { font-size: 44px; margin-bottom: 12px; }
+    .setup-text { font-size: 15px; font-weight: 600; line-height: 1.6; margin-top: 16px; }
+    .setup-sub { font-size: 13px; color: #777; margin-top: 8px; }
+    .setup-actions { margin-top: 20px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+    .setup-actions .btn { min-width: 130px; }
+    .setup-error-text { color: #c0392b; font-weight: 500; }
+    .setup-left { text-align: left; }
+  </style>
 </head>
 <body class="connect-page">
   <div class="connect-container">
@@ -13,56 +30,100 @@
       <h1 class="connect-title">Google Sheet 연결</h1>
     </div>
 
+    {# JS 미사용 환경(폼 폴백)에서 전달된 오류 #}
     {% if error %}
     <div class="alert alert-error">{{ error }}</div>
     {% endif %}
 
-    <!-- 탭 -->
-    <div class="tab-bar" id="tab-bar">
-      <button class="tab-btn active" onclick="switchTab('connect')">기존 시트 연결</button>
-      <button class="tab-btn" onclick="switchTab('create')">새 시트 만들기</button>
+    {# 1. 저장된/기본 시트 탐색 #}
+    <div id="step-loading" class="setup-step">
+      <div class="setup-spinner"></div>
+      <p class="setup-text">기록을 저장할 구글 시트를<br>확인하고 있습니다.</p>
     </div>
 
-    <!-- 기존 시트 연결 -->
-    <div id="tab-connect" class="tab-content">
-      <p class="connect-desc">연결할 Google Sheet URL을 입력하세요.<br>
-        지정한 워크시트가 없으면 자동으로 생성됩니다.</p>
-      <form method="post" action="{{ url_for('sheet.connect') }}" class="connect-form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="action" value="connect">
-        <div class="form-group">
-          <label class="form-label">Google Sheet URL</label>
-          <input type="url" name="sheet_url" class="form-input"
-            placeholder="https://docs.google.com/spreadsheets/d/..." required autofocus>
-        </div>
-        <div class="form-group">
-          <label class="form-label">워크시트 이름</label>
-          <input type="text" name="worksheet_name" class="form-input"
-            value="{{ default_worksheet }}" placeholder="{{ default_worksheet }}">
-          <p class="form-hint">데이터를 저장할 워크시트(탭) 이름입니다.</p>
-        </div>
-        <button type="submit" class="btn btn-primary btn-full">연결하기</button>
-      </form>
+    {# 2. 기본 시트 발견 → 사용 여부 확인 #}
+    <div id="step-found" class="setup-step" style="display:none;">
+      <div class="setup-icon">🔍</div>
+      <p class="setup-text">
+        "<span id="found-title">{{ default_spreadsheet }}</span>" 시트를 찾았습니다.<br>이 시트로 연결할까요?
+      </p>
+      <div class="setup-actions">
+        <button type="button" class="btn btn-primary" id="btn-use-found">이 시트로 연결</button>
+        <button type="button" class="btn" id="btn-manual-from-found">직접 설정하기</button>
+      </div>
     </div>
 
-    <!-- 새 시트 만들기 -->
-    <div id="tab-create" class="tab-content" style="display:none;">
-      <p class="connect-desc">새 Google Sheet 문서를 만들고 바로 시작하세요.</p>
-      <form method="post" action="{{ url_for('sheet.connect') }}" class="connect-form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="action" value="create">
-        <div class="form-group">
-          <label class="form-label">문서 이름</label>
-          <input type="text" name="doc_title" class="form-input"
-            value="My Favorite Watch" placeholder="My Favorite Watch">
-        </div>
-        <div class="form-group">
-          <label class="form-label">워크시트 이름</label>
-          <input type="text" name="worksheet_name" class="form-input"
-            value="{{ default_worksheet }}" placeholder="{{ default_worksheet }}">
-        </div>
-        <button type="submit" class="btn btn-primary btn-full">새 시트 만들기</button>
-      </form>
+    {# 3. 수동 설정 — 기존 URL 입력 / 새로 만들기 플로우 #}
+    <div id="step-manual" style="display:none;">
+      <p class="connect-desc" id="manual-intro">연결할 구글 시트를 직접 설정해주세요.</p>
+
+      <div class="tab-bar" id="tab-bar">
+        <button type="button" class="tab-btn active" data-tab="connect">기존 시트 연결</button>
+        <button type="button" class="tab-btn" data-tab="create">새 시트 만들기</button>
+      </div>
+
+      <!-- 기존 시트 연결 -->
+      <div id="tab-connect" class="tab-content setup-left">
+        <p class="connect-desc">연결할 Google Sheet URL을 입력하세요.<br>
+          지정한 워크시트가 없으면 자동으로 생성됩니다.</p>
+        <form method="post" action="{{ url_for('sheet.connect') }}" class="connect-form" id="form-connect">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="connect">
+          <div class="form-group">
+            <label class="form-label">Google Sheet URL</label>
+            <input type="url" name="sheet_url" class="form-input"
+              placeholder="https://docs.google.com/spreadsheets/d/..." required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">워크시트 이름</label>
+            <input type="text" name="worksheet_name" class="form-input"
+              value="{{ default_worksheet }}" placeholder="{{ default_worksheet }}">
+            <p class="form-hint">데이터를 저장할 워크시트(탭) 이름입니다.</p>
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">연결하기</button>
+        </form>
+      </div>
+
+      <!-- 새 시트 만들기 -->
+      <div id="tab-create" class="tab-content setup-left" style="display:none;">
+        <p class="connect-desc">새 Google Sheet 문서를 만들고 바로 시작하세요.</p>
+        <form method="post" action="{{ url_for('sheet.connect') }}" class="connect-form" id="form-create">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="create">
+          <div class="form-group">
+            <label class="form-label">문서 이름</label>
+            <input type="text" name="doc_title" class="form-input"
+              value="{{ default_spreadsheet }}" placeholder="{{ default_spreadsheet }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">워크시트 이름</label>
+            <input type="text" name="worksheet_name" class="form-input"
+              value="{{ default_worksheet }}" placeholder="{{ default_worksheet }}">
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">새 시트 만들기</button>
+        </form>
+      </div>
+
+      <div class="setup-actions" id="manual-back-wrap" style="display:none;">
+        <button type="button" class="btn" id="btn-back-to-found">이전</button>
+      </div>
+    </div>
+
+    {# 4. 성공 → 잠시 후 목록으로 자동 이동 #}
+    <div id="step-success" class="setup-step" style="display:none;">
+      <div class="setup-icon">✅</div>
+      <p class="setup-text" id="success-msg"></p>
+      <p class="setup-sub">잠시 후 목록 화면으로 이동합니다.</p>
+    </div>
+
+    {# 5. 실패 → 오류 표시 후 재시도/이전 대기 #}
+    <div id="step-error" class="setup-step" style="display:none;">
+      <div class="setup-icon">⚠️</div>
+      <p class="setup-text setup-error-text" id="error-msg"></p>
+      <div class="setup-actions">
+        <button type="button" class="btn btn-primary" id="btn-retry">다시 시도</button>
+        <button type="button" class="btn" id="btn-error-back">이전</button>
+      </div>
     </div>
 
     <div class="connect-footer">
@@ -74,12 +135,146 @@
   </div>
 
   <script>
-    function switchTab(name) {
-      document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
-      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-      document.getElementById('tab-' + name).style.display = 'block';
-      event.target.classList.add('active');
-    }
+    (function () {
+      var STEPS = ['step-loading', 'step-found', 'step-manual', 'step-success', 'step-error'];
+      var LIST_URL = {{ url_for('main.index') | tojson }};
+      var SUCCESS_REDIRECT_MS = 1200;
+      var foundSheet = null;   // {sheet_id, title}
+      var lastAction = null;   // "다시 시도"가 재실행할 동작
+      var backStep = null;     // "이전"으로 돌아갈 단계
+
+      function el(id) { return document.getElementById(id); }
+
+      function show(id) {
+        STEPS.forEach(function (s) {
+          el(s).style.display = (s === id) ? 'block' : 'none';
+        });
+      }
+
+      function csrf() {
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute('content') : '';
+      }
+
+      function post(url, body) {
+        return fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() },
+          body: JSON.stringify(body || {})
+        }).then(function (r) {
+          return r.json().catch(function () {
+            return { ok: false, error: '서버 응답을 처리하지 못했습니다.' };
+          });
+        });
+      }
+
+      function fail(message, retryFn, back) {
+        lastAction = retryFn;
+        backStep = back || null;
+        el('error-msg').innerText = message || '알 수 없는 오류가 발생했습니다.';
+        el('btn-error-back').style.display = backStep ? '' : 'none';
+        show('step-error');
+      }
+
+      function succeed(title) {
+        el('success-msg').innerText = '"' + title + '" 시트에 연결되었습니다.';
+        show('step-success');
+        setTimeout(function () { window.location.href = LIST_URL; }, SUCCESS_REDIRECT_MS);
+      }
+
+      function showManual(canGoBack) {
+        el('manual-back-wrap').style.display = canGoBack ? '' : 'none';
+        show('step-manual');
+      }
+
+      function switchTab(name) {
+        document.querySelectorAll('#step-manual .tab-content').forEach(function (c) {
+          c.style.display = 'none';
+        });
+        document.querySelectorAll('#tab-bar .tab-btn').forEach(function (b) {
+          b.classList.toggle('active', b.getAttribute('data-tab') === name);
+        });
+        el('tab-' + name).style.display = 'block';
+      }
+
+      // 1단계: 기본 이름의 시트 검색 (자동 연결하지 않음)
+      function discover() {
+        show('step-loading');
+        post('/connect/discover')
+          .then(function (data) {
+            if (!data.ok) { fail(data.error, discover, null); return; }
+            if (data.found) {
+              foundSheet = { sheet_id: data.sheet_id, title: data.title };
+              el('found-title').innerText = data.title;
+              show('step-found');
+            } else {
+              el('manual-intro').innerText =
+                '연결할 수 있는 시트를 찾지 못했습니다. 직접 설정하거나 새로 만들어주세요.';
+              showManual(false);
+            }
+          })
+          .catch(function () { fail('네트워크 오류가 발생했습니다.', discover, null); });
+      }
+
+      function useFound() {
+        if (!foundSheet) { discover(); return; }
+        show('step-loading');
+        post('/connect/use-found', foundSheet)
+          .then(function (data) {
+            if (data.ok) { succeed(data.title || foundSheet.title); }
+            else { fail(data.error, useFound, 'step-found'); }
+          })
+          .catch(function () { fail('네트워크 오류가 발생했습니다.', useFound, 'step-found'); });
+      }
+
+      function connectByUrl() {
+        var form = el('form-connect');
+        var url = (form.sheet_url.value || '').trim();
+        var ws = (form.worksheet_name.value || '').trim();
+        if (!url) { fail('올바른 Google Sheet URL을 입력해주세요.', null, 'step-manual'); return; }
+        show('step-loading');
+        post('/connect/by-url', { sheet_url: url, worksheet_name: ws })
+          .then(function (data) {
+            if (data.ok) { succeed(data.title); }
+            else { fail(data.error, connectByUrl, 'step-manual'); }
+          })
+          .catch(function () { fail('네트워크 오류가 발생했습니다.', connectByUrl, 'step-manual'); });
+      }
+
+      function createSheet() {
+        var form = el('form-create');
+        var title = (form.doc_title.value || '').trim();
+        var ws = (form.worksheet_name.value || '').trim();
+        show('step-loading');
+        post('/connect/create', { doc_title: title, worksheet_name: ws })
+          .then(function (data) {
+            if (data.ok) { succeed(data.title); }
+            else { fail(data.error, createSheet, 'step-manual'); }
+          })
+          .catch(function () { fail('네트워크 오류가 발생했습니다.', createSheet, 'step-manual'); });
+      }
+
+      document.querySelectorAll('#tab-bar .tab-btn').forEach(function (b) {
+        b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); });
+      });
+      el('btn-use-found').addEventListener('click', useFound);
+      el('btn-manual-from-found').addEventListener('click', function () { showManual(true); });
+      el('btn-back-to-found').addEventListener('click', function () { show('step-found'); });
+      el('form-connect').addEventListener('submit', function (e) { e.preventDefault(); connectByUrl(); });
+      el('form-create').addEventListener('submit', function (e) { e.preventDefault(); createSheet(); });
+      el('btn-retry').addEventListener('click', function () {
+        if (lastAction) { lastAction(); } else { discover(); }
+      });
+      el('btn-error-back').addEventListener('click', function () {
+        if (backStep === 'step-manual') { showManual(!!foundSheet); }
+        else if (backStep) { show(backStep); }
+        else { discover(); }
+      });
+
+      // 폼 폴백으로 전달된 오류가 있으면 탐색을 건너뛰고 수동 화면부터 보여준다.
+      if (document.querySelector('.alert-error')) { showManual(false); }
+      else { discover(); }
+    })();
   </script>
 </body>
 </html>
