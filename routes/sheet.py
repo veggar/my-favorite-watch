@@ -7,11 +7,13 @@ from services.google_sheets import (
     verify_sheet_access,
     ensure_worksheet,
     create_spreadsheet,
+    find_spreadsheet_by_name,
     import_from_sheet,
     get_all_items,
     get_items_title_map,
     append_items_batch,
     update_item,
+    DEFAULT_SPREADSHEET_NAME,
     DEFAULT_WORKSHEET_NAME,
     HEADERS,
     DELETED_HEADERS,
@@ -31,52 +33,136 @@ def _save_sheet_session(sheet_id: str, sheet_title: str, worksheet_name: str):
     update_sheet(request.cookies.get("device_id"))
 
 
+class ConnectError(Exception):
+    """시트 연결 과정에서 사용자에게 그대로 보여줄 오류."""
+
+
+def _friendly_sheet_error(e: Exception, prefix: str) -> str:
+    err_str = str(e)
+    if "403" in err_str:
+        return "시트 접근 권한이 없습니다."
+    if "404" in err_str:
+        return "시트를 찾을 수 없습니다."
+    return f"{prefix}: {err_str}"
+
+
+def _attach_spreadsheet(sheet_id: str, worksheet_name: str, sheet_title: str = "") -> dict:
+    """스프레드시트를 검증하고 필요한 워크시트를 준비한 뒤 세션에 저장한다."""
+    credentials = get_credentials()
+    worksheet_name = (worksheet_name or DEFAULT_WORKSHEET_NAME).strip() or DEFAULT_WORKSHEET_NAME
+    try:
+        info = verify_sheet_access(credentials, sheet_id)
+        ensure_worksheet(credentials, sheet_id, worksheet_name, HEADERS)
+        ensure_worksheet(credentials, sheet_id, DELETED_WORKSHEET_NAME, DELETED_HEADERS)
+    except Exception as e:
+        raise ConnectError(_friendly_sheet_error(e, "연결에 실패했습니다")) from e
+    title = sheet_title or info["title"]
+    _save_sheet_session(sheet_id, title, worksheet_name)
+    return {"sheet_id": sheet_id, "title": title, "worksheet_name": worksheet_name}
+
+
+def _connect_by_url(sheet_url: str, worksheet_name: str) -> dict:
+    sheet_id = extract_sheet_id(sheet_url or "")
+    if not sheet_id:
+        raise ConnectError("올바른 Google Sheet URL을 입력해주세요.")
+    return _attach_spreadsheet(sheet_id, worksheet_name)
+
+
+def _create_new_spreadsheet(doc_title: str, worksheet_name: str) -> dict:
+    doc_title = (doc_title or DEFAULT_SPREADSHEET_NAME).strip() or DEFAULT_SPREADSHEET_NAME
+    worksheet_name = (worksheet_name or DEFAULT_WORKSHEET_NAME).strip() or DEFAULT_WORKSHEET_NAME
+    credentials = get_credentials()
+    try:
+        result = create_spreadsheet(credentials, doc_title, worksheet_name)
+    except Exception as e:
+        raise ConnectError(_friendly_sheet_error(e, "시트 생성에 실패했습니다")) from e
+    _save_sheet_session(result["sheet_id"], doc_title, worksheet_name)
+    return {"sheet_id": result["sheet_id"], "title": doc_title, "worksheet_name": worksheet_name}
+
+
 @sheet_bp.route("/connect", methods=["GET", "POST"])
 @login_required
 def connect():
+    """시트 연결 화면.
+
+    POST는 JavaScript를 사용할 수 없는 환경을 위한 폴백 경로이며,
+    기본 플로우는 아래 JSON 엔드포인트를 사용한다.
+    """
     error = None
     if request.method == "POST":
         action = request.form.get("action", "connect")
-
-        # ── 새 시트 문서 생성 ──
-        if action == "create":
-            doc_title = request.form.get("doc_title", "My Favorite Watch").strip() or "My Favorite Watch"
-            worksheet_name = request.form.get("worksheet_name", DEFAULT_WORKSHEET_NAME).strip() or DEFAULT_WORKSHEET_NAME
-            credentials = get_credentials()
-            try:
-                result = create_spreadsheet(credentials, doc_title, worksheet_name)
-                _save_sheet_session(result["sheet_id"], doc_title, worksheet_name)
-                return redirect(url_for("main.index"))
-            except Exception as e:
-                error = f"시트 생성에 실패했습니다: {e}"
-
-        # ── 기존 시트 연결 ──
-        elif action == "connect":
-            sheet_url = request.form.get("sheet_url", "").strip()
-            worksheet_name = request.form.get("worksheet_name", DEFAULT_WORKSHEET_NAME).strip() or DEFAULT_WORKSHEET_NAME
-            sheet_id = extract_sheet_id(sheet_url)
-
-            if not sheet_id:
-                error = "올바른 Google Sheet URL을 입력해주세요."
+        try:
+            if action == "create":
+                _create_new_spreadsheet(
+                    request.form.get("doc_title", ""),
+                    request.form.get("worksheet_name", ""),
+                )
             else:
-                credentials = get_credentials()
-                try:
-                    info = verify_sheet_access(credentials, sheet_id)
-                    ensure_worksheet(credentials, sheet_id, worksheet_name, HEADERS)
-                    ensure_worksheet(credentials, sheet_id, DELETED_WORKSHEET_NAME, DELETED_HEADERS)
-                    _save_sheet_session(sheet_id, info["title"], worksheet_name)
-                    return redirect(url_for("main.index"))
-                except Exception as e:
-                    err_str = str(e)
-                    if "403" in err_str:
-                        error = "시트 접근 권한이 없습니다."
-                    elif "404" in err_str:
-                        error = "시트를 찾을 수 없습니다."
-                    else:
-                        error = f"연결에 실패했습니다: {err_str}"
+                _connect_by_url(
+                    request.form.get("sheet_url", "").strip(),
+                    request.form.get("worksheet_name", ""),
+                )
+            return redirect(url_for("main.index"))
+        except ConnectError as e:
+            error = str(e)
 
     return render_template("connect.html", user=session.get("user"), error=error,
-                           default_worksheet=DEFAULT_WORKSHEET_NAME)
+                           default_worksheet=DEFAULT_WORKSHEET_NAME,
+                           default_spreadsheet=DEFAULT_SPREADSHEET_NAME)
+
+
+# ── 시트 연결 JSON 엔드포인트 ──────────────────────────────────────────────
+
+@sheet_bp.route("/connect/discover", methods=["POST"])
+@login_required
+def connect_discover():
+    """기본 이름의 시트를 검색만 한다. 연결은 사용자 확인 후 별도로 수행한다."""
+    try:
+        found = find_spreadsheet_by_name(get_credentials(), DEFAULT_SPREADSHEET_NAME)
+    except Exception as e:
+        return jsonify({"ok": False, "error": _friendly_sheet_error(e, "시트 검색에 실패했습니다")}), 502
+    if not found:
+        return jsonify({"ok": True, "found": False})
+    return jsonify({"ok": True, "found": True, **found})
+
+
+@sheet_bp.route("/connect/use-found", methods=["POST"])
+@login_required
+def connect_use_found():
+    """검색된 시트를 사용자가 승인한 경우에만 연결한다."""
+    data = request.get_json(silent=True) or {}
+    sheet_id = (data.get("sheet_id") or "").strip()
+    if not sheet_id:
+        return jsonify({"ok": False, "error": "시트 ID가 누락되었습니다."}), 400
+    try:
+        info = _attach_spreadsheet(sheet_id, data.get("worksheet_name", ""), data.get("title", ""))
+    except ConnectError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, **info})
+
+
+@sheet_bp.route("/connect/by-url", methods=["POST"])
+@login_required
+def connect_by_url():
+    """사용자가 직접 입력한 URL로 연결한다."""
+    data = request.get_json(silent=True) or {}
+    try:
+        info = _connect_by_url(data.get("sheet_url", ""), data.get("worksheet_name", ""))
+    except ConnectError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, **info})
+
+
+@sheet_bp.route("/connect/create", methods=["POST"])
+@login_required
+def connect_create():
+    """새 시트를 생성하고 연결한다."""
+    data = request.get_json(silent=True) or {}
+    try:
+        info = _create_new_spreadsheet(data.get("doc_title", ""), data.get("worksheet_name", ""))
+    except ConnectError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "created": True, **info})
 
 
 @sheet_bp.route("/import-sheet", methods=["GET", "POST"])

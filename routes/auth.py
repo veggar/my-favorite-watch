@@ -7,7 +7,12 @@ from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 import google.auth.transport.requests
 
-from services.firestore_session import save_session, delete_session
+from services.firestore_session import (
+    save_session,
+    delete_session,
+    lookup_saved_sheet,
+    apply_sheet_to_session,
+)
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -90,6 +95,14 @@ def auth_callback():
 
     # Firestore에 refresh_token 저장 + device_id 쿠키 발급
     device_id = request.cookies.get("device_id") or secrets.token_urlsafe(32)
+
+    # 세션 만료 후 재로그인한 경우 이전에 연결한 시트 정보를 복원하여
+    # 시트를 다시 설정하도록 요구하지 않는다.
+    if not session.get("sheet_id"):
+        apply_sheet_to_session(
+            lookup_saved_sheet(device_id, session["user"].get("email", ""))
+        )
+
     save_session(device_id, credentials.refresh_token, session["user"])
 
     dest = url_for("main.index") if session.get("sheet_id") else url_for("sheet.connect")
