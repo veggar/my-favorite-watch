@@ -7,6 +7,10 @@
 #   2. .env 파일에 모든 값 채워져 있는지 확인
 #   3. GCP Console > API 및 서비스 > 사용자 인증 정보에서
 #      REDIRECT_URI 값이 OAuth 클라이언트의 승인된 리디렉션 URI에 등록되어 있는지 확인
+#
+# 배포 후 1회성 설정 (재구축·프로젝트 이전 시에도 다시 필요):
+#   - Firestore tmdb_jobs TTL 정책, expires_at 색인 면제, sessions 수명 정책
+#   - 절차와 명령은 SETUP.md "10. 배포 후 1회성 설정" 참조
 
 set -e
 

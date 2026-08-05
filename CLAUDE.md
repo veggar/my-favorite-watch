@@ -34,5 +34,11 @@
 * 프로젝트의 설치 및 실행 절차를 명확히 문서화한다.(이 줄은 변경하지 않는다).
 * 설치 또는 실행 문서가 없거나, 오래되었거나, 실제 설정과 일치하지 않으면 작업을 진행하기 전에 생성하거나 업데이트한다.(이 줄은 변경하지 않는다).
 * 명령어를 업데이트할 때는 필요한 환경 변수, 포트, 진입점, 사전 준비 단계를 명확히 적는다.(이 줄은 변경하지 않는다).
-  - **Install:** `pip install -r requirements.txt`
+  - **Install:** `pip install -r requirements.txt` (개발/테스트: `pip install -r requirements-dev.txt`)
   - **Run:** `python3 app.py` -> <http://localhost:8090>
+    - 사전 준비: `.env.example`을 `.env`로 복사 후 `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `FLASK_SECRET_KEY` / `REDIRECT_URI` 입력. 로컬은 `APP_ENV=development`.
+    - (선택) `TMDB_API_KEY` 미설정 시 TMDb 자동 보강만 생략된다.
+    - (선택) `SESSION_LIFETIME_HOURS`(기본 12), `TMDB_ENRICH_CHUNK`(기본 15)
+  - **Test:** `python3 -m pytest tests/ -v`
+  - **Deploy:** `bash scripts/deploy.sh` (Cloud Run. `.env` 필요. 대상 변경은 `GOOGLE_CLOUD_PROJECT`/`CLOUD_RUN_REGION`)
+  - **설정 가이드:** 환경 구성 · Firestore · 배포 후 1회성 설정(TTL 정책 등)은 `SETUP.md` 참조
