@@ -10,3 +10,4 @@ build/
 .venv/
 venv/
 flask_session/
+.pytest_cache/

@@ -94,11 +94,12 @@ def enrich_items_background(creds_data: dict, sheet_id: str, worksheet_name: str
                              items: list[dict]) -> None:
     """
     백그라운드 스레드용: items를 TMDb로 보강 후 시트 업데이트.
-    creds_data: session["credentials"] 딕셔너리 (스레드에서 세션 접근 불가)
+    creds_data: routes.auth.export_credentials_for_worker() 결과
+                (스레드에서 세션 접근이 불가하므로 메모리로 전달한다)
     """
     from services.tmdb_tracker import set_status, clear
     from services.google_sheets import update_item
-    from google.oauth2.credentials import Credentials
+    from services.google_credentials import credentials_from_worker_payload
     import google.auth.transport.requests
 
     if not TMDB_API_KEY:
@@ -106,14 +107,7 @@ def enrich_items_background(creds_data: dict, sheet_id: str, worksheet_name: str
         return
 
     try:
-        creds = Credentials(
-            token=creds_data.get("token"),
-            refresh_token=creds_data.get("refresh_token"),
-            token_uri=creds_data.get("token_uri"),
-            client_id=creds_data.get("client_id"),
-            client_secret=creds_data.get("client_secret"),
-            scopes=creds_data.get("scopes"),
-        )
+        creds = credentials_from_worker_payload(creds_data)
         if creds.expired and creds.refresh_token:
             creds.refresh(google.auth.transport.requests.Request())
     except Exception:
