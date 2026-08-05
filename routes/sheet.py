@@ -1,7 +1,5 @@
-import time
-import threading
 from flask import Blueprint, render_template, request, session, redirect, url_for, jsonify
-from routes.auth import login_required, get_credentials, export_credentials_for_worker
+from routes.auth import login_required, get_credentials
 from services.google_sheets import (
     extract_sheet_id,
     verify_sheet_access,
@@ -19,7 +17,7 @@ from services.google_sheets import (
     DELETED_HEADERS,
     DELETED_WORKSHEET_NAME,
 )
-from services.tmdb import enrich_item, enrich_items_batch, enrich_items_background
+from services.tmdb import enrich_item, enrich_items_batch
 from services.tmdb_tracker import mark_pending
 from services.firestore_session import update_sheet
 
@@ -201,27 +199,24 @@ def import_sheet():
                         dst_sheet_id, dst_worksheet, existing_map
                     )
 
-                    # 새로 추가된 항목을 비동기 TMDb 보강
+                    # 새로 추가된 항목은 목록 화면에서 청크 단위로 동기 보강한다.
+                    # (백그라운드 스레드는 Cloud Run CPU 스로틀링으로 유실됨)
                     if count > 0:
                         all_items = get_all_items(credentials, dst_sheet_id, dst_worksheet)
                         new_items = all_items[before_count:]
                         new_ids = [it["id"] for it in new_items if it.get("id")]
                         if new_ids:
                             mark_pending(new_ids)
-                            # 세션에는 access token 만 있으므로 워커용 자격증명을
-                            # 환경 변수 + Firestore 에서 별도로 조립한다.
-                            creds_data = export_credentials_for_worker()
-                            t = threading.Thread(
-                                target=enrich_items_background,
-                                args=(creds_data, dst_sheet_id, dst_worksheet, new_items),
-                                daemon=True,
-                            )
-                            t.start()
                             session["tmdb_pending_ids"] = new_ids
 
-                    success = f"{count}개 작품을 가져왔습니다."
+                    msg = f"{count}개 작품을 가져왔습니다."
                     if count > 0:
-                        success += " · TMDb 검색 중..."
+                        # 보강은 목록 화면에서 청크 단위로 진행되므로
+                        # 업로드 경로와 동일하게 목록으로 이동시킨다.
+                        msg += " · TMDb 검색 중..."
+                        session["import_success"] = msg
+                        return redirect(url_for("main.index"))
+                    success = msg
             except Exception as e:
                 err_str = str(e)
                 if "403" in err_str:
@@ -305,16 +300,9 @@ def upload_csv():
                 for item, item_id in zip(new_items, saved_ids):
                     item["id"] = item_id
 
-                # ── 비동기 TMDb 보강 ──
+                # ── TMDb 보강 예약 (목록 화면에서 청크 단위 동기 처리) ──
                 if saved_ids:
                     mark_pending(saved_ids)
-                    creds_data = export_credentials_for_worker()
-                    t = threading.Thread(
-                        target=enrich_items_background,
-                        args=(creds_data, sheet_id, worksheet_name, new_items),
-                        daemon=True,
-                    )
-                    t.start()
 
                 msg = f"{len(new_items)}개 등록 완료"
                 if skipped:

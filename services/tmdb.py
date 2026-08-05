@@ -1,6 +1,9 @@
+import logging
 import os
 import time
 import requests
+
+logger = logging.getLogger(__name__)
 
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "")
 TMDB_BASE = "https://api.themoviedb.org/3"
@@ -90,39 +93,38 @@ def enrich_item(item: dict) -> bool:
     return changed
 
 
-def enrich_items_background(creds_data: dict, sheet_id: str, worksheet_name: str,
-                             items: list[dict]) -> None:
+# 한 요청에서 동기 처리할 항목 수.
+# 요청 수명 안에서 끝내야 하므로(Cloud Run CPU 스로틀링 회피) gunicorn
+# --timeout 안에 확실히 들어오는 크기로 제한한다.
+ENRICH_CHUNK_SIZE = int(os.environ.get("TMDB_ENRICH_CHUNK", "15"))
+
+
+def enrich_items_chunk(creds, sheet_id: str, worksheet_name: str,
+                       items: list[dict], rate_limit_sec: float = 0.1) -> dict[str, str]:
+    """items 를 **요청 수명 안에서 동기적으로** 보강하고 시트에 반영한다.
+
+    백그라운드 데몬 스레드를 쓰지 않으므로 Cloud Run 이 응답 후 CPU 를
+    스로틀링해도 작업이 중단되지 않는다(계획서 P0-3 원인 2).
+    호출부는 ENRICH_CHUNK_SIZE 단위로 나눠 반복 호출한다.
+
+    반환: {item_id: "done" | "not_found"}
     """
-    백그라운드 스레드용: items를 TMDb로 보강 후 시트 업데이트.
-    creds_data: routes.auth.export_credentials_for_worker() 결과
-                (스레드에서 세션 접근이 불가하므로 메모리로 전달한다)
-    """
-    from services.tmdb_tracker import set_status, clear
     from services.google_sheets import update_item
-    from services.google_credentials import credentials_from_worker_payload
-    import google.auth.transport.requests
+
+    statuses: dict[str, str] = {}
+    if not items:
+        return statuses
 
     if not TMDB_API_KEY:
-        clear([item["id"] for item in items if item.get("id")])
-        return
-
-    try:
-        creds = credentials_from_worker_payload(creds_data)
-        if creds.expired and creds.refresh_token:
-            creds.refresh(google.auth.transport.requests.Request())
-    except Exception:
-        for item in items:
-            if item.get("id"):
-                set_status(item["id"], "not_found")
-        return
+        # TMDb 미설정 시 보강 대상이 아니므로 대기 상태를 남기지 않는다.
+        return {item["id"]: "" for item in items if item.get("id")}
 
     for i, item in enumerate(items):
         item_id = item.get("id")
         if not item_id:
             continue
         if i > 0:
-            time.sleep(0.1)
-        set_status(item_id, "searching")
+            time.sleep(rate_limit_sec)
         try:
             changed = enrich_item(item)
             if changed:
@@ -130,9 +132,12 @@ def enrich_items_background(creds_data: dict, sheet_id: str, worksheet_name: str
                 watched_val = data.get("watched", False)
                 data["watched"] = watched_val is True or str(watched_val).lower() == "true"
                 update_item(creds, sheet_id, item_id, data, worksheet_name)
-            set_status(item_id, "done" if changed else "not_found")
+            statuses[item_id] = "done" if changed else "not_found"
         except Exception:
-            set_status(item_id, "not_found")
+            logger.warning("TMDb 보강 실패 (item_id=%s)", item_id, exc_info=True)
+            statuses[item_id] = "not_found"
+
+    return statuses
 
 
 def enrich_items_batch(items: list[dict], rate_limit_sec: float = 0.1) -> int:

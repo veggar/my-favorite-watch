@@ -122,10 +122,62 @@ def tmdb_search():
 @item_bp.route("/item/tmdb-status", methods=["GET"])
 @sheet_required
 def tmdb_status():
-    """TMDb 비동기 보강 상태 조회 (AJAX 폴링용)."""
+    """TMDb 보강 상태 조회 (AJAX용)."""
     from services.tmdb_tracker import get_statuses
     ids = [i for i in request.args.get("ids", "").split(",") if i]
     return jsonify(get_statuses(ids))
+
+
+@item_bp.route("/item/tmdb-enrich-chunk", methods=["POST"])
+@sheet_required
+def tmdb_enrich_chunk():
+    """대기 중인 항목 중 일부를 **이 요청 안에서 동기적으로** 보강한다.
+
+    백그라운드 스레드를 쓰지 않으므로 Cloud Run 이 응답 후 CPU 를
+    스로틀링해도 작업이 유실되지 않는다. 브라우저가 done=false 인 동안
+    반복 호출하여 전체를 완료시킨다. 진행 상태는 Firestore 에 남으므로
+    페이지를 새로고침하거나 다른 워커/인스턴스로 라우팅되어도 이어진다.
+    """
+    from services.google_sheets import get_all_items
+    from services.tmdb import enrich_items_chunk, ENRICH_CHUNK_SIZE
+    from services.tmdb_tracker import set_statuses, clear
+
+    remaining = [i for i in session.get("tmdb_pending_ids", []) if i]
+    if not remaining:
+        return jsonify({"ok": True, "done": True, "remaining": 0, "statuses": {}})
+
+    credentials = get_credentials()
+    sheet_id = session.get("sheet_id")
+    worksheet_name = session.get("worksheet_name", DEFAULT_WORKSHEET_NAME)
+
+    target_ids = remaining[:ENRICH_CHUNK_SIZE]
+    target_set = set(target_ids)
+
+    all_items = get_all_items(credentials, sheet_id, worksheet_name)
+    targets = [it for it in all_items if it.get("id") in target_set]
+
+    # 시트에서 사라진 id(삭제 등)는 대기열에서 제거한다.
+    missing = [i for i in target_ids if i not in {it.get("id") for it in targets}]
+    if missing:
+        clear(missing)
+
+    statuses = enrich_items_chunk(credentials, sheet_id, worksheet_name, targets)
+    if statuses:
+        set_statuses({k: v for k, v in statuses.items() if v})
+
+    rest = remaining[len(target_ids):]
+    if rest:
+        session["tmdb_pending_ids"] = rest
+    else:
+        session.pop("tmdb_pending_ids", None)
+
+    return jsonify({
+        "ok": True,
+        "done": not rest,
+        "processed": len(target_ids),
+        "remaining": len(rest),
+        "statuses": statuses,
+    })
 
 
 @item_bp.route("/item/<item_id>/tmdb-update", methods=["POST"])

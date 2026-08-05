@@ -22,7 +22,6 @@ from services.google_credentials import (
     client_secret as _client_secret,
     credentials_from_session,
     session_payload,
-    worker_payload,
 )
 
 auth_bp = Blueprint("auth", __name__)
@@ -154,22 +153,6 @@ def get_credentials():
     if creds.refresh_token and creds.refresh_token != refresh_token:
         update_refresh_token(device_id, creds.refresh_token)
     return creds
-
-
-def export_credentials_for_worker() -> dict:
-    """동일 프로세스 내 워커 스레드에 넘길 자격증명 직렬화.
-
-    ⚠️ client_secret 이 포함된다. 세션 · 쿠키 · 로그 · 응답에 넣지 말 것.
-    """
-    creds = get_credentials()
-    if creds is None:
-        return {}
-    if not creds.refresh_token:
-        # 갱신 가능하도록 refresh_token 을 함께 실어 보낸다(메모리 전달 전용).
-        refresh_token = get_refresh_token(request.cookies.get("device_id"))
-        if refresh_token:
-            creds = credentials_from_session(session.get("credentials", {}), refresh_token)
-    return worker_payload(creds)
 
 
 def login_required(f):
