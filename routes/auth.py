@@ -28,6 +28,27 @@ auth_bp = Blueprint("auth", __name__)
 
 REDIRECT_URI = os.environ.get("REDIRECT_URI", "http://localhost:8090/auth/callback")
 
+# 장기 로그인 유지 기간. Flask 세션(단기)이 만료돼도 이 쿠키와 Firestore
+# refresh_token 으로 세션을 자동 복원하므로, 사용자가 체감하는 로그인 유지
+# 기간은 이 값이 기준이 된다.
+DEVICE_ID_MAX_AGE = 60 * 60 * 24 * 90  # 90일
+
+
+def _cookie_secure() -> bool:
+    return os.environ.get("APP_ENV", "production").lower() not in ("development", "dev", "local")
+
+
+def set_device_cookie(resp, device_id: str) -> None:
+    """device_id 쿠키를 발급/연장한다. 만료는 마지막 사용 시점 기준으로 갱신된다."""
+    resp.set_cookie(
+        "device_id",
+        device_id,
+        max_age=DEVICE_ID_MAX_AGE,
+        httponly=True,
+        samesite="Lax",
+        secure=_cookie_secure(),
+    )
+
 
 def _build_flow():
     client_config = {
@@ -76,6 +97,9 @@ def auth_callback():
     flow.fetch_token(authorization_response=request.url)
 
     credentials = flow.credentials
+    # permanent 를 지정하지 않으면 브라우저 종료 시 사라지는 세션 쿠키가 되어
+    # PERMANENT_SESSION_LIFETIME 이 적용되지 않는다.
+    session.permanent = True
     # 세션에는 access token 과 만료 시각만 저장한다.
     # client_secret / refresh_token 은 Flask 세션 쿠키가 암호화되지 않으므로
     # 절대 담지 않는다. (security.md "Sanitization")
@@ -104,14 +128,7 @@ def auth_callback():
 
     dest = url_for("main.index") if session.get("sheet_id") else url_for("sheet.connect")
     resp = make_response(redirect(dest))
-    resp.set_cookie(
-        "device_id",
-        device_id,
-        max_age=60 * 60 * 24 * 90,  # 90일
-        httponly=True,
-        samesite="Lax",
-        secure=not (os.environ.get("APP_ENV", "production").lower() in ("development", "dev", "local")),
-    )
+    set_device_cookie(resp, device_id)
     return resp
 
 
