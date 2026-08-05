@@ -4,7 +4,6 @@ import secrets
 from datetime import datetime, timezone
 
 import google.auth.transport.requests
-from google.oauth2.credentials import Credentials
 from flask import Flask, jsonify, redirect, request, session, url_for
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -29,14 +28,11 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 # ── Firestore (refresh token 영구 저장) ────────────────────────────────────
 from services.firestore_session import get_db as _get_fs_db  # noqa: E402
+from services.google_credentials import (  # noqa: E402
+    build_credentials as _build_credentials,
+    session_payload as _session_payload,
+)
 
-_SCOPES = [
-    "openid",
-    "https://www.googleapis.com/auth/userinfo.email",
-    "https://www.googleapis.com/auth/userinfo.profile",
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive.metadata.readonly",
-]
 _NO_RESTORE_PATHS = {"/login", "/auth/google", "/auth/callback", "/logout"}
 
 # secret_key: 운영 환경에서 미설정 시 즉시 실패
@@ -82,24 +78,12 @@ def auto_restore_session():
         refresh_token = data.get("refresh_token")
         if not refresh_token:
             return
-        creds = Credentials(
-            token=None,
-            refresh_token=refresh_token,
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=os.environ.get("GOOGLE_CLIENT_ID"),
-            client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
-            scopes=_SCOPES,
-        )
+        creds = _build_credentials(token=None, refresh_token=refresh_token)
         creds.refresh(google.auth.transport.requests.Request())
         session.permanent = True
-        session["credentials"] = {
-            "token": creds.token,
-            "refresh_token": creds.refresh_token,
-            "token_uri": creds.token_uri,
-            "client_id": creds.client_id,
-            "client_secret": creds.client_secret,
-            "scopes": _SCOPES,
-        }
+        # 세션에는 access token 과 만료 시각만 저장한다 (client_secret /
+        # refresh_token 은 서명만 된 쿠키에 담기지 않는다).
+        session["credentials"] = _session_payload(creds)
         session["user"] = data.get("user", {})
         session["sheet_id"] = data.get("sheet_id", "")
         session["sheet_title"] = data.get("sheet_title", "")

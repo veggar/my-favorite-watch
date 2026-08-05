@@ -42,6 +42,41 @@ def save_session(device_id: str, refresh_token: str, user_info: dict):
         logger.warning("Firestore save failed", exc_info=True)
 
 
+def get_refresh_token(device_id: str) -> str | None:
+    """device_id 로 저장된 refresh_token 을 조회한다.
+
+    refresh_token 은 세션 쿠키(서명만 되고 암호화되지 않음)에 두지 않고
+    Firestore 에만 보관하므로, 액세스 토큰 갱신이 실제로 필요한 시점에만
+    이 함수로 조회한다.
+    """
+    if _db is None or not device_id:
+        return None
+    try:
+        doc = _db.collection("sessions").document(device_id).get()
+        if not doc.exists:
+            return None
+        return (doc.to_dict() or {}).get("refresh_token") or None
+    except Exception:
+        logger.warning("Firestore refresh_token lookup failed", exc_info=True)
+        return None
+
+
+def update_refresh_token(device_id: str, refresh_token: str) -> None:
+    """갱신 과정에서 새 refresh_token 이 발급된 경우 저장한다."""
+    if _db is None or not device_id or not refresh_token:
+        return
+    try:
+        _db.collection("sessions").document(device_id).set(
+            {
+                "refresh_token": refresh_token,
+                "updated_at": datetime.now(timezone.utc),
+            },
+            merge=True,
+        )
+    except Exception:
+        logger.warning("Firestore refresh_token update failed", exc_info=True)
+
+
 def lookup_saved_sheet(device_id: str, email: str = "") -> dict | None:
     """저장된 시트 연결 정보를 device_id 우선, 없으면 email 기준으로 조회한다."""
     if _db is None:

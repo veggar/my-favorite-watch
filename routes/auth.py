@@ -4,7 +4,6 @@ from functools import wraps
 
 from flask import Blueprint, make_response, redirect, request, session, url_for
 from google_auth_oauthlib.flow import Flow
-from google.oauth2.credentials import Credentials
 import google.auth.transport.requests
 
 from services.firestore_session import (
@@ -12,18 +11,21 @@ from services.firestore_session import (
     delete_session,
     lookup_saved_sheet,
     apply_sheet_to_session,
+    get_refresh_token,
+    update_refresh_token,
+)
+from services.google_credentials import (
+    SCOPES,
+    TOKEN_URI,
+    AUTH_URI,
+    client_id as _client_id,
+    client_secret as _client_secret,
+    credentials_from_session,
+    session_payload,
+    worker_payload,
 )
 
 auth_bp = Blueprint("auth", __name__)
-
-SCOPES = [
-    "openid",
-    "https://www.googleapis.com/auth/userinfo.email",
-    "https://www.googleapis.com/auth/userinfo.profile",
-    "https://www.googleapis.com/auth/spreadsheets",
-    # drive.readonly → metadata.readonly 로 최소 권한 원칙 적용
-    "https://www.googleapis.com/auth/drive.metadata.readonly",
-]
 
 REDIRECT_URI = os.environ.get("REDIRECT_URI", "http://localhost:8090/auth/callback")
 
@@ -31,10 +33,10 @@ REDIRECT_URI = os.environ.get("REDIRECT_URI", "http://localhost:8090/auth/callba
 def _build_flow():
     client_config = {
         "web": {
-            "client_id": os.environ.get("GOOGLE_CLIENT_ID"),
-            "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET"),
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
+            "client_id": _client_id(),
+            "client_secret": _client_secret(),
+            "auth_uri": AUTH_URI,
+            "token_uri": TOKEN_URI,
             "redirect_uris": [REDIRECT_URI],
         }
     }
@@ -75,14 +77,10 @@ def auth_callback():
     flow.fetch_token(authorization_response=request.url)
 
     credentials = flow.credentials
-    session["credentials"] = {
-        "token": credentials.token,
-        "refresh_token": credentials.refresh_token,
-        "token_uri": credentials.token_uri,
-        "client_id": credentials.client_id,
-        "client_secret": credentials.client_secret,
-        "scopes": list(credentials.scopes) if credentials.scopes else SCOPES,
-    }
+    # 세션에는 access token 과 만료 시각만 저장한다.
+    # client_secret / refresh_token 은 Flask 세션 쿠키가 암호화되지 않으므로
+    # 절대 담지 않는다. (security.md "Sanitization")
+    session["credentials"] = session_payload(credentials)
 
     import googleapiclient.discovery
     svc = googleapiclient.discovery.build("oauth2", "v2", credentials=credentials)
@@ -129,22 +127,49 @@ def logout():
 
 
 def get_credentials():
-    """세션에서 Google 인증 정보를 복원하고 만료 시 갱신."""
-    if "credentials" not in session:
+    """세션의 access token 으로 Credentials 를 재구성하고 만료 시 갱신한다.
+
+    refresh_token 은 세션이 아니라 Firestore 에 있으므로, 갱신이 실제로
+    필요한 시점에만 device_id 로 조회한다(요청마다 조회하지 않는다).
+    """
+    creds_data = session.get("credentials")
+    if not creds_data:
         return None
-    creds_data = session["credentials"]
-    creds = Credentials(
-        token=creds_data["token"],
-        refresh_token=creds_data.get("refresh_token"),
-        token_uri=creds_data["token_uri"],
-        client_id=creds_data["client_id"],
-        client_secret=creds_data["client_secret"],
-        scopes=creds_data["scopes"],
-    )
-    if creds.expired and creds.refresh_token:
-        creds.refresh(google.auth.transport.requests.Request())
-        session["credentials"]["token"] = creds.token
+
+    creds = credentials_from_session(creds_data)
+    if creds.token and not creds.expired:
+        return creds
+
+    device_id = request.cookies.get("device_id")
+    refresh_token = get_refresh_token(device_id)
+    if not refresh_token:
+        # Firestore 미구성(로컬 개발) 등으로 갱신이 불가능한 경우.
+        # 만료된 토큰 그대로 반환하면 API 호출이 실패하고 전역 에러 핸들러가
+        # 로그인 화면으로 유도한다.
+        return creds
+
+    creds = credentials_from_session(creds_data, refresh_token)
+    creds.refresh(google.auth.transport.requests.Request())
+    session["credentials"] = session_payload(creds)
+    if creds.refresh_token and creds.refresh_token != refresh_token:
+        update_refresh_token(device_id, creds.refresh_token)
     return creds
+
+
+def export_credentials_for_worker() -> dict:
+    """동일 프로세스 내 워커 스레드에 넘길 자격증명 직렬화.
+
+    ⚠️ client_secret 이 포함된다. 세션 · 쿠키 · 로그 · 응답에 넣지 말 것.
+    """
+    creds = get_credentials()
+    if creds is None:
+        return {}
+    if not creds.refresh_token:
+        # 갱신 가능하도록 refresh_token 을 함께 실어 보낸다(메모리 전달 전용).
+        refresh_token = get_refresh_token(request.cookies.get("device_id"))
+        if refresh_token:
+            creds = credentials_from_session(session.get("credentials", {}), refresh_token)
+    return worker_payload(creds)
 
 
 def login_required(f):

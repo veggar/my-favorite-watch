@@ -1,7 +1,7 @@
 import time
 import threading
 from flask import Blueprint, render_template, request, session, redirect, url_for, jsonify
-from routes.auth import login_required, get_credentials
+from routes.auth import login_required, get_credentials, export_credentials_for_worker
 from services.google_sheets import (
     extract_sheet_id,
     verify_sheet_access,
@@ -208,7 +208,9 @@ def import_sheet():
                         new_ids = [it["id"] for it in new_items if it.get("id")]
                         if new_ids:
                             mark_pending(new_ids)
-                            creds_data = dict(session.get("credentials", {}))
+                            # 세션에는 access token 만 있으므로 워커용 자격증명을
+                            # 환경 변수 + Firestore 에서 별도로 조립한다.
+                            creds_data = export_credentials_for_worker()
                             t = threading.Thread(
                                 target=enrich_items_background,
                                 args=(creds_data, dst_sheet_id, dst_worksheet, new_items),
@@ -306,7 +308,7 @@ def upload_csv():
                 # ── 비동기 TMDb 보강 ──
                 if saved_ids:
                     mark_pending(saved_ids)
-                    creds_data = dict(session.get("credentials", {}))
+                    creds_data = export_credentials_for_worker()
                     t = threading.Thread(
                         target=enrich_items_background,
                         args=(creds_data, sheet_id, worksheet_name, new_items),
