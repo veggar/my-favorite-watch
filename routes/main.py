@@ -109,7 +109,10 @@ def index():
     page_items = filtered[offset: offset + PAGE_SIZE]
 
     import_success = session.pop("import_success", None)
-    tmdb_pending_ids = session.pop("tmdb_pending_ids", [])
+    # 대기열은 pop 하지 않는다. 청크 보강이 완료될 때까지 세션에 남겨 두어야
+    # 새로고침하거나 도중에 중단해도 이어서 처리할 수 있다.
+    # (완료 시 item.tmdb_enrich_chunk 가 제거한다)
+    tmdb_pending_ids = session.get("tmdb_pending_ids", [])
 
     return render_template(
         "list.html",

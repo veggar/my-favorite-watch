@@ -16,9 +16,7 @@ os.environ.setdefault("GOOGLE_CLIENT_SECRET", "test-client-secret")
 from services.google_credentials import (  # noqa: E402
     build_credentials,
     credentials_from_session,
-    credentials_from_worker_payload,
     session_payload,
-    worker_payload,
 )
 
 SECRET_KEYS = ("client_secret", "refresh_token")
@@ -64,13 +62,3 @@ def test_expired_token_is_detected_via_stored_expiry():
     creds = build_credentials(token="stale", refresh_token=None, expiry=past)
     restored = credentials_from_session(session_payload(creds))
     assert restored.expired is True
-
-
-def test_worker_payload_round_trip_keeps_secrets_in_memory(creds):
-    """워커 전달용 페이로드는 갱신이 가능해야 하므로 비밀 값을 포함한다."""
-    payload = worker_payload(creds)
-    for key in SECRET_KEYS:
-        assert key in payload
-    restored = credentials_from_worker_payload(payload)
-    assert restored.refresh_token == "1//refresh-token-secret"
-    assert restored.client_secret == "test-client-secret"
