@@ -108,7 +108,7 @@
 
   {% if load_error %}
   <div class="alert alert-error">
-    목록을 불러오지 못했습니다: {{ load_error }}
+    {{ load_error }}
     <button onclick="location.reload()" class="btn btn-sm">재시도</button>
   </div>
   {% endif %}

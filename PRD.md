@@ -504,6 +504,7 @@
 - 운영 환경에서 `FLASK_SECRET_KEY` 미설정 시 앱 시작 실패
 - POST/PUT/PATCH/DELETE 요청 CSRF 토큰 검증
 - 세션 쿠키: HttpOnly, SameSite=Lax, 운영 환경 Secure
+- 예외 원문을 화면에 노출하지 않는다. 사용자에게는 `services/errors.py`의 정제된 안내 문구만 보여주고, 원본 예외와 스택은 서버 로그에만 기록한다
 - 개발 환경에서만 `OAUTHLIB_INSECURE_TRANSPORT=1` (HTTP 허용), `OAUTHLIB_RELAX_TOKEN_SCOPE=1`
 
 ---

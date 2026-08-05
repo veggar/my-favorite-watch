@@ -1,6 +1,11 @@
+import logging
+
 from flask import Blueprint, render_template, request, session
 from routes.auth import sheet_required, get_credentials
+from services.errors import friendly_error
 from services.google_sheets import get_all_items, get_deleted_items, DEFAULT_WORKSHEET_NAME
+
+logger = logging.getLogger(__name__)
 
 main_bp = Blueprint("main", __name__)
 
@@ -69,7 +74,8 @@ def index():
             deleted_items = get_deleted_items(credentials, sheet_id)
         except Exception as e:
             deleted_items = []
-            load_error = str(e)
+            load_error = friendly_error(e, "삭제 목록을 불러오지 못했습니다",
+                                        context="get_deleted_items", log=logger)
         page_items = deleted_items[offset: offset + PAGE_SIZE]
         return render_template(
             "list.html",
@@ -95,7 +101,8 @@ def index():
         items = get_all_items(credentials, sheet_id, worksheet_name)
     except Exception as e:
         items = []
-        load_error = str(e)
+        load_error = friendly_error(e, "목록을 불러오지 못했습니다",
+                                    context="get_all_items", log=logger)
 
     query = request.args.get("q", "").strip()
     scope = request.args.get("scope", "title")
