@@ -28,6 +28,38 @@
 
 버전 형식은 `v{major}.{minor}.{patch}`이며 `version.py`에서 관리한다. 소스 변경이 포함된 커밋 전에는 변경 유형에 맞춰 버전을 함께 갱신한다.
 
+## 브랜치 · PR 규칙
+
+- **PR 생성 시 base 브랜치를 항상 명시한다.** `gh pr create` 는 현재 체크아웃된
+  브랜치의 upstream 이나 저장소 기본 브랜치를 base 로 추정하므로, 생략하면
+  의도하지 않은 브랜치로 PR 이 열린다.
+
+  ```bash
+  gh pr create --base master --head <branch> --title "..." --body "..."
+  ```
+
+- **작업 브랜치는 `master` 에서 딴다.** 다른 작업 브랜치 위에 브랜치를 쌓지 않는다.
+  선행 작업이 필요하면 선행 PR 을 master 로 먼저 머지한 뒤 `master` 를 다시 받아 시작한다.
+
+  > 실제 사고 사례: `p0-1 → p0-3 → p0-5 → p0-6` 이 서로 스택된 상태에서
+  > PR #6·#7·#8 이 master 가 아니라 바로 앞 작업 브랜치로 머지되었다.
+  > master 에는 P0-1 만 들어갔고 P0-3·P0-5·P0-6 이 체인 안에 갇혔는데,
+  > PR 목록에는 전부 "Merged" 로 보여 반영된 것으로 오판하기 쉬웠다.
+
+- PR 을 열기 전에 base 대비 상태를 확인한다.
+
+  ```bash
+  git fetch origin
+  git log --oneline origin/master..<branch>   # 반영될 커밋
+  git log --oneline <branch>..origin/master   # 뒤처진 커밋
+  ```
+
+- 머지 후에는 해당 브랜치가 실제로 master 조상이 되었는지 검증한다.
+
+  ```bash
+  git merge-base --is-ancestor origin/<branch> origin/master && echo 반영됨 || echo 미반영
+  ```
+
 ## 명령어
 
 * 설치 방법은 아래 "Install:" 섹션에, 실행 명령은 "Run:" 섹션에 작성한다(이 줄은 변경하지 않는다).
