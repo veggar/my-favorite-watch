@@ -72,31 +72,6 @@ def credentials_from_session(session_data: dict,
     )
 
 
-def worker_payload(creds: Credentials) -> dict:
-    """워커 스레드 등 프로세스 내부 전달 전용 직렬화.
-
-    ⚠️ client_secret 이 포함되므로 **절대 세션 · 쿠키 · 로그 · 응답에 넣지 않는다.**
-    동일 프로세스 메모리 안에서만 사용한다.
-    """
-    return {
-        "token": creds.token,
-        "refresh_token": creds.refresh_token,
-        "token_uri": TOKEN_URI,
-        "client_id": client_id(),
-        "client_secret": client_secret(),
-        "scopes": SCOPES,
-        "expiry": _expiry_to_str(creds.expiry),
-    }
-
-
-def credentials_from_worker_payload(data: dict) -> Credentials:
-    return build_credentials(
-        token=data.get("token"),
-        refresh_token=data.get("refresh_token"),
-        expiry=_expiry_from_str(data.get("expiry")),
-    )
-
-
 # ── 내부 헬퍼 ──────────────────────────────────────────────────────────────
 
 def _expiry_to_str(expiry: datetime | None) -> str:
