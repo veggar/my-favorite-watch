@@ -1,7 +1,8 @@
-import time
-import threading
+import logging
+
 from flask import Blueprint, render_template, request, session, redirect, url_for, jsonify
-from routes.auth import login_required, get_credentials, export_credentials_for_worker
+from routes.auth import login_required, get_credentials
+from services.errors import friendly_error, http_status
 from services.google_sheets import (
     extract_sheet_id,
     verify_sheet_access,
@@ -19,9 +20,11 @@ from services.google_sheets import (
     DELETED_HEADERS,
     DELETED_WORKSHEET_NAME,
 )
-from services.tmdb import enrich_item, enrich_items_batch, enrich_items_background
+from services.tmdb import enrich_item, enrich_items_batch
 from services.tmdb_tracker import mark_pending
 from services.firestore_session import update_sheet
+
+logger = logging.getLogger(__name__)
 
 sheet_bp = Blueprint("sheet", __name__)
 
@@ -34,16 +37,28 @@ def _save_sheet_session(sheet_id: str, sheet_title: str, worksheet_name: str):
 
 
 class ConnectError(Exception):
-    """시트 연결 과정에서 사용자에게 그대로 보여줄 오류."""
+    """시트 연결 과정에서 사용자에게 그대로 보여줄 오류.
+
+    메시지는 _friendly_sheet_error() 를 거쳐 이미 정제된 문구이므로
+    화면에 노출해도 안전하다. 원본 예외는 `raise ... from e` 로 연결되며
+    로그에만 남는다.
+    """
+
+    @property
+    def user_message(self) -> str:
+        return str(self)
 
 
 def _friendly_sheet_error(e: Exception, prefix: str) -> str:
-    err_str = str(e)
-    if "403" in err_str:
+    """시트 관련 예외를 사용자용 문구로 변환한다. 원문은 로그로만 남는다."""
+    status = http_status(e)
+    if status == 403:
+        logger.warning("시트 접근 권한 없음 (%s)", type(e).__name__)
         return "시트 접근 권한이 없습니다."
-    if "404" in err_str:
+    if status == 404:
+        logger.warning("시트를 찾을 수 없음 (%s)", type(e).__name__)
         return "시트를 찾을 수 없습니다."
-    return f"{prefix}: {err_str}"
+    return friendly_error(e, prefix, context="sheet", log=logger)
 
 
 def _attach_spreadsheet(sheet_id: str, worksheet_name: str, sheet_title: str = "") -> dict:
@@ -104,7 +119,7 @@ def connect():
                 )
             return redirect(url_for("main.index"))
         except ConnectError as e:
-            error = str(e)
+            error = e.user_message
 
     return render_template("connect.html", user=session.get("user"), error=error,
                            default_worksheet=DEFAULT_WORKSHEET_NAME,
@@ -137,7 +152,7 @@ def connect_use_found():
     try:
         info = _attach_spreadsheet(sheet_id, data.get("worksheet_name", ""), data.get("title", ""))
     except ConnectError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": False, "error": e.user_message}), 400
     return jsonify({"ok": True, **info})
 
 
@@ -149,7 +164,7 @@ def connect_by_url():
     try:
         info = _connect_by_url(data.get("sheet_url", ""), data.get("worksheet_name", ""))
     except ConnectError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": False, "error": e.user_message}), 400
     return jsonify({"ok": True, **info})
 
 
@@ -161,7 +176,7 @@ def connect_create():
     try:
         info = _create_new_spreadsheet(data.get("doc_title", ""), data.get("worksheet_name", ""))
     except ConnectError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": False, "error": e.user_message}), 400
     return jsonify({"ok": True, "created": True, **info})
 
 
@@ -201,33 +216,31 @@ def import_sheet():
                         dst_sheet_id, dst_worksheet, existing_map
                     )
 
-                    # 새로 추가된 항목을 비동기 TMDb 보강
+                    # 새로 추가된 항목은 목록 화면에서 청크 단위로 동기 보강한다.
+                    # (백그라운드 스레드는 Cloud Run CPU 스로틀링으로 유실됨)
                     if count > 0:
                         all_items = get_all_items(credentials, dst_sheet_id, dst_worksheet)
                         new_items = all_items[before_count:]
                         new_ids = [it["id"] for it in new_items if it.get("id")]
                         if new_ids:
                             mark_pending(new_ids)
-                            # 세션에는 access token 만 있으므로 워커용 자격증명을
-                            # 환경 변수 + Firestore 에서 별도로 조립한다.
-                            creds_data = export_credentials_for_worker()
-                            t = threading.Thread(
-                                target=enrich_items_background,
-                                args=(creds_data, dst_sheet_id, dst_worksheet, new_items),
-                                daemon=True,
-                            )
-                            t.start()
                             session["tmdb_pending_ids"] = new_ids
 
-                    success = f"{count}개 작품을 가져왔습니다."
+                    msg = f"{count}개 작품을 가져왔습니다."
                     if count > 0:
-                        success += " · TMDb 검색 중..."
+                        # 보강은 목록 화면에서 청크 단위로 진행되므로
+                        # 업로드 경로와 동일하게 목록으로 이동시킨다.
+                        msg += " · TMDb 검색 중..."
+                        session["import_success"] = msg
+                        return redirect(url_for("main.index"))
+                    success = msg
             except Exception as e:
-                err_str = str(e)
-                if "403" in err_str:
+                if http_status(e) == 403:
+                    logger.warning("소스 시트 접근 권한 없음 (%s)", type(e).__name__)
                     error = "소스 시트 접근 권한이 없습니다."
                 else:
-                    error = f"가져오기에 실패했습니다: {err_str}"
+                    error = friendly_error(e, "가져오기에 실패했습니다",
+                                           context="import_sheet", log=logger)
 
     return render_template(
         "import_sheet.html",
@@ -272,7 +285,10 @@ def upload_csv():
                         preview = items
                         session["csv_import_data"] = items
                 except Exception as e:
-                    error = f"파싱 실패: {e}"
+                    # 파일 파싱 오류 원문에는 경로·내부 구조가 포함될 수 있다.
+                    logger.exception("CSV/Excel 파싱 실패 (%s)", type(e).__name__)
+                    error = ("파일을 읽지 못했습니다. "
+                             "CSV 또는 Excel(.xlsx) 형식과 열 구성을 확인해주세요.")
 
         elif action == "import":
             items = session.pop("csv_import_data", None)
@@ -305,16 +321,9 @@ def upload_csv():
                 for item, item_id in zip(new_items, saved_ids):
                     item["id"] = item_id
 
-                # ── 비동기 TMDb 보강 ──
+                # ── TMDb 보강 예약 (목록 화면에서 청크 단위 동기 처리) ──
                 if saved_ids:
                     mark_pending(saved_ids)
-                    creds_data = export_credentials_for_worker()
-                    t = threading.Thread(
-                        target=enrich_items_background,
-                        args=(creds_data, sheet_id, worksheet_name, new_items),
-                        daemon=True,
-                    )
-                    t.start()
 
                 msg = f"{len(new_items)}개 등록 완료"
                 if skipped:

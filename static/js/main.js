@@ -265,8 +265,19 @@ function updateTmdbStatusIcons(statuses) {
   }
 }
 
-(function startTmdbPolling() {
+// ===== TMDb 보강 진행 (청크 동기 처리) =====
+// 서버가 백그라운드 스레드를 쓰지 않고 요청 안에서 동기 보강하므로,
+// 브라우저가 완료될 때까지 청크 요청을 반복한다. 진행 상태는 서버(Firestore)에
+// 남으므로 새로고침하거나 도중에 중단해도 이어서 처리할 수 있다.
+(function startTmdbEnrichment() {
   if (typeof TMDB_PENDING_IDS === "undefined" || !TMDB_PENDING_IDS.length) return;
+  if (typeof TMDB_ENRICH_URL === "undefined") return;
+
+  const total = TMDB_PENDING_IDS.length;
+  const banner = document.getElementById("import-success-banner");
+  let processed = 0;
+  let running = false;
+  let stopped = false;
 
   // 초기 상태를 ⏳로 표시
   TMDB_PENDING_IDS.forEach(id => {
@@ -274,38 +285,55 @@ function updateTmdbStatusIcons(statuses) {
     if (el) { el.textContent = "⏳"; el.title = "TMDb 검색 대기 중"; el.style.display = "inline"; }
   });
 
-  let pending = [...TMDB_PENDING_IDS];
-  let done = 0;
-  const total = pending.length;
-
-  const banner = document.getElementById("import-success-banner");
-
-  async function poll() {
-    if (!pending.length) return;
-    try {
-      const resp = await fetch(TMDB_STATUS_URL + "?ids=" + pending.join(","));
-      const statuses = await resp.json();
-      updateTmdbStatusIcons(statuses);
-
-      // 완료/실패 항목을 pending에서 제거
-      pending = pending.filter(id => {
-        const s = statuses[id];
-        if (s === "done" || s === "not_found") { done++; return false; }
-        return true;
-      });
-
-      // 진행률 배너 업데이트
-      if (banner && total > 1) {
-        const pct = Math.round((done / total) * 100);
-        banner.textContent = `TMDb 검색 중... ${pct}% (${done}/${total})`;
-        if (!pending.length) banner.textContent = `TMDb 검색 완료 (${done}/${total})`;
-      }
-
-      if (pending.length) setTimeout(poll, 2000);
-    } catch {
-      // 폴링 오류 시 조용히 중단
+  function render(text, showResume) {
+    if (!banner) return;
+    banner.textContent = text;
+    if (showResume) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-sm";
+      btn.style.marginLeft = "8px";
+      btn.textContent = "이어하기";
+      btn.addEventListener("click", () => { stopped = false; run(); });
+      banner.appendChild(btn);
     }
   }
 
-  setTimeout(poll, 1500);
+  function progressText() {
+    const pct = total ? Math.round((processed / total) * 100) : 100;
+    return `TMDb 검색 중... ${pct}% (${processed}/${total})`;
+  }
+
+  async function run() {
+    if (running || stopped) return;
+    running = true;
+    try {
+      while (!stopped) {
+        const resp = await fetch(TMDB_ENRICH_URL, { method: "POST", headers: csrfHeaders() });
+        if (!resp.ok) throw new Error("enrich request failed: " + resp.status);
+        const data = await resp.json();
+        updateTmdbStatusIcons(data.statuses || {});
+        processed = Math.min(total, processed + (data.processed || 0));
+        if (data.done) {
+          render(`TMDb 검색 완료 (${processed}/${total})`, false);
+          return;
+        }
+        render(progressText(), false);
+        if (!data.processed) return;  // 진전이 없으면 무한 루프 방지
+      }
+    } catch {
+      stopped = true;
+      render(`TMDb 검색이 중단되었습니다 (${processed}/${total}).`, true);
+    } finally {
+      running = false;
+    }
+  }
+
+  // 사용자가 탭을 벗어나면 중단하고, 돌아오면 자동으로 이어서 처리한다.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && !stopped) run();
+  });
+
+  render(progressText(), false);
+  run();
 })();

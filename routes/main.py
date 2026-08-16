@@ -1,6 +1,11 @@
+import logging
+
 from flask import Blueprint, render_template, request, session
 from routes.auth import sheet_required, get_credentials
+from services.errors import friendly_error
 from services.google_sheets import get_all_items, get_deleted_items, DEFAULT_WORKSHEET_NAME
+
+logger = logging.getLogger(__name__)
 
 main_bp = Blueprint("main", __name__)
 
@@ -69,7 +74,8 @@ def index():
             deleted_items = get_deleted_items(credentials, sheet_id)
         except Exception as e:
             deleted_items = []
-            load_error = str(e)
+            load_error = friendly_error(e, "삭제 목록을 불러오지 못했습니다",
+                                        context="get_deleted_items", log=logger)
         page_items = deleted_items[offset: offset + PAGE_SIZE]
         return render_template(
             "list.html",
@@ -95,7 +101,8 @@ def index():
         items = get_all_items(credentials, sheet_id, worksheet_name)
     except Exception as e:
         items = []
-        load_error = str(e)
+        load_error = friendly_error(e, "목록을 불러오지 못했습니다",
+                                    context="get_all_items", log=logger)
 
     query = request.args.get("q", "").strip()
     scope = request.args.get("scope", "title")
@@ -109,7 +116,10 @@ def index():
     page_items = filtered[offset: offset + PAGE_SIZE]
 
     import_success = session.pop("import_success", None)
-    tmdb_pending_ids = session.pop("tmdb_pending_ids", [])
+    # 대기열은 pop 하지 않는다. 청크 보강이 완료될 때까지 세션에 남겨 두어야
+    # 새로고침하거나 도중에 중단해도 이어서 처리할 수 있다.
+    # (완료 시 item.tmdb_enrich_chunk 가 제거한다)
+    tmdb_pending_ids = session.get("tmdb_pending_ids", [])
 
     return render_template(
         "list.html",

@@ -1,6 +1,11 @@
+import logging
+
 from flask import Blueprint, render_template, request, session, redirect, url_for
 from routes.auth import sheet_required, get_credentials
+from services.errors import friendly_error
 from services.google_sheets import rename_spreadsheet, rename_worksheet, DEFAULT_WORKSHEET_NAME
+
+logger = logging.getLogger(__name__)
 
 settings_bp = Blueprint("settings", __name__)
 
@@ -39,7 +44,8 @@ def settings():
                     rename_spreadsheet(credentials, session["sheet_id"], new_title)
                     session["sheet_title"] = new_title
                 except Exception as e:
-                    error = f"문서 이름 변경 실패: {e}"
+                    error = friendly_error(e, "문서 이름을 변경하지 못했습니다",
+                                           context="rename_doc", log=logger)
         elif action == "rename_worksheet":
             new_ws = request.form.get("new_worksheet_name", "").strip()
             if new_ws:
@@ -49,7 +55,8 @@ def settings():
                     rename_worksheet(credentials, session["sheet_id"], old_ws, new_ws)
                     session["worksheet_name"] = new_ws
                 except Exception as e:
-                    error = f"워크시트 이름 변경 실패: {e}"
+                    error = friendly_error(e, "워크시트 이름을 변경하지 못했습니다",
+                                           context="rename_worksheet", log=logger)
         if not error:
             return redirect(url_for("settings.settings"))
 

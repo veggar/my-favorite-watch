@@ -1,10 +1,10 @@
 import logging
 import os
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import google.auth.transport.requests
-from flask import Flask, jsonify, redirect, request, session, url_for
+from flask import Flask, g, jsonify, redirect, request, session, url_for
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
@@ -44,11 +44,23 @@ if not _secret_key:
         raise RuntimeError("FLASK_SECRET_KEY 환경 변수가 설정되지 않았습니다.")
 app.secret_key = _secret_key
 
+# 세션 수명
+#
+# Flask 기본값은 31일이다. 그러나 장기 로그인 유지는 Flask 세션이 아니라
+# `device_id` 쿠키(90일) + Firestore refresh_token 이 담당한다. 세션이 만료돼도
+# auto_restore_session 이 같은 요청에서 세션을 재구성하므로 사용자가 체감하는
+# 로그인 유지 기간(동일 디바이스 기준 90일)에는 영향이 없다.
+# 따라서 세션 쿠키 자체는 짧게 유지해 탈취 시 노출 창을 줄인다.
+SESSION_LIFETIME_HOURS = int(os.environ.get("SESSION_LIFETIME_HOURS", "12"))
+
 # 세션 쿠키 보안 설정
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=not IS_DEV,  # HTTPS 환경(Cloud Run)에서만 전송
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=SESSION_LIFETIME_HOURS),
+    # 요청마다 만료 시각을 연장한다(사용 중에는 끊기지 않도록).
+    SESSION_REFRESH_EACH_REQUEST=True,
 )
 
 # ── 로깅 ──────────────────────────────────────────────────────────────────
@@ -92,8 +104,21 @@ def auto_restore_session():
             "refresh_token": creds.refresh_token,
             "updated_at": datetime.now(timezone.utc),
         })
+        # 세션 복원에 성공했으므로 device_id 쿠키 만료를 연장한다.
+        # (연장하지 않으면 계속 사용 중인 사용자도 최초 로그인 90일 후 로그아웃된다)
+        g.renew_device_id = device_id
     except Exception:
         logger.warning("Firestore session restore failed", exc_info=True)
+
+
+@app.after_request
+def renew_device_cookie(resp):
+    """auto_restore_session 이 성공한 요청에서 device_id 쿠키를 갱신한다."""
+    device_id = getattr(g, "renew_device_id", None)
+    if device_id:
+        from routes.auth import set_device_cookie
+        set_device_cookie(resp, device_id)
+    return resp
 
 
 # ── CSRF 보호 ─────────────────────────────────────────────────────────────

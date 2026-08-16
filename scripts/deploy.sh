@@ -7,6 +7,13 @@
 #   2. .env 파일에 모든 값 채워져 있는지 확인
 #   3. GCP Console > API 및 서비스 > 사용자 인증 정보에서
 #      REDIRECT_URI 값이 OAuth 클라이언트의 승인된 리디렉션 URI에 등록되어 있는지 확인
+#      (운영: https://mfw.worldapex.studio/auth/callback)
+#   4. Cloud Run 도메인 매핑(mfw.worldapex.studio)이 살아 있는지 확인
+#      gcloud beta run domain-mappings list --region "$CLOUD_RUN_REGION"
+#
+# 배포 후 1회성 설정 (재구축·프로젝트 이전 시에도 다시 필요):
+#   - Firestore tmdb_jobs TTL 정책, expires_at 색인 면제, sessions 수명 정책
+#   - 절차와 명령은 SETUP.md "10. 배포 후 1회성 설정" 참조
 
 set -e
 
@@ -36,17 +43,26 @@ PROJECT="${GOOGLE_CLOUD_PROJECT:-my-favorite-watch}"
 REGION="${CLOUD_RUN_REGION:-asia-northeast3}"
 SERVICE="my-favorite-watch"
 
+# 서비스 공개 주소.
+# 커스텀 도메인(mfw.worldapex.studio)이 Cloud Run 도메인 매핑으로 연결되어 있다.
+# 도메인 매핑 이전 상태로 되돌려 확인해야 하면 아래처럼 실행 시 덮어쓴다.
+#   PUBLIC_BASE_URL="https://${SERVICE}-641162137323.${REGION}.run.app" bash scripts/deploy.sh
+PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://mfw.worldapex.studio}"
+PUBLIC_BASE_URL="${PUBLIC_BASE_URL%/}"
+
+# 배포용 REDIRECT_URI (로컬 .env의 localhost 값을 공개 주소로 대체)
+DEPLOY_REDIRECT_URI="${PUBLIC_BASE_URL}/auth/callback"
+
 echo "🚀 Cloud Run 배포 시작"
 echo "   프로젝트: $PROJECT"
 echo "   리전:     $REGION"
 echo "   서비스:   $SERVICE"
-echo "   REDIRECT_URI: $REDIRECT_URI"
+echo "   공개 주소: $PUBLIC_BASE_URL"
+echo "   REDIRECT_URI(로컬): $REDIRECT_URI"
+echo "   REDIRECT_URI(배포): $DEPLOY_REDIRECT_URI"
 echo ""
 
 cd "$PROJECT_ROOT"
-
-# Cloud Run용 REDIRECT_URI (로컬 .env의 localhost 값을 Cloud Run URL로 대체)
-CLOUDRUN_REDIRECT_URI="https://${SERVICE}-641162137323.${REGION}.run.app/auth/callback"
 
 # Cloud Build + Artifact Registry 권한 확인 후 배포
 gcloud run deploy "$SERVICE" \
@@ -54,8 +70,9 @@ gcloud run deploy "$SERVICE" \
   --region "$REGION" \
   --project "$PROJECT" \
   --allow-unauthenticated \
-  --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET},FLASK_SECRET_KEY=${FLASK_SECRET_KEY},TMDB_API_KEY=${TMDB_API_KEY},REDIRECT_URI=${CLOUDRUN_REDIRECT_URI},APP_ENV=production"
+  --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET},FLASK_SECRET_KEY=${FLASK_SECRET_KEY},TMDB_API_KEY=${TMDB_API_KEY},REDIRECT_URI=${DEPLOY_REDIRECT_URI},APP_ENV=production"
 
 echo ""
 echo "✅ 배포 완료"
-echo "   서비스 URL: https://${SERVICE}-641162137323.${REGION}.run.app"
+echo "   서비스 URL: ${PUBLIC_BASE_URL}"
+echo "   (도메인 매핑 미적용 시: https://${SERVICE}-641162137323.${REGION}.run.app)"

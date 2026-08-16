@@ -101,13 +101,14 @@
     {% endif %}
   </div>
 
-  {% if import_success %}
-  <div class="alert alert-success" id="import-success-banner">{{ import_success }}</div>
+  {# 보강 대기 항목이 남아 있으면 새로고침 후에도 진행률 배너를 유지한다 #}
+  {% if import_success or tmdb_pending_ids %}
+  <div class="alert alert-success" id="import-success-banner">{{ import_success or "TMDb 검색 중..." }}</div>
   {% endif %}
 
   {% if load_error %}
   <div class="alert alert-error">
-    목록을 불러오지 못했습니다: {{ load_error }}
+    {{ load_error }}
     <button onclick="location.reload()" class="btn btn-sm">재시도</button>
   </div>
   {% endif %}
@@ -272,6 +273,7 @@
     const UPDATE_URL_TEMPLATE = "{{ url_for('item.update', item_id='__ID__') }}";
     const TMDB_UPDATE_URL = "{{ url_for('item.tmdb_update', item_id='__ID__') }}";
     const TMDB_STATUS_URL = "{{ url_for('item.tmdb_status') }}";
+    const TMDB_ENRICH_URL = "{{ url_for('item.tmdb_enrich_chunk') }}";
     const TMDB_PENDING_IDS = {{ tmdb_pending_ids | tojson }};
     const CSRF_TOKEN = "{{ csrf_token() }}";
   </script>
