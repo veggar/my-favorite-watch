@@ -581,8 +581,11 @@ version.py                  # 앱 버전
 - Cloud Run 실행: `gunicorn --bind "0.0.0.0:${PORT}" --workers 2 --threads 8 --timeout 60 app:app`
 - 필수 환경 변수: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `FLASK_SECRET_KEY`, `REDIRECT_URI`
 - 선택 환경 변수: `TMDB_API_KEY` (미설정 시 TMDb 기능 전체 스킵)
-- 배포 선택 환경 변수: `GOOGLE_CLOUD_PROJECT`, `CLOUD_RUN_REGION`
+- 배포 선택 환경 변수: `GOOGLE_CLOUD_PROJECT`, `CLOUD_RUN_REGION`, `PUBLIC_BASE_URL`
 - 환경 구분: `APP_ENV=development|production`
+- 운영 도메인: `https://mfw.worldapex.studio` (Porkbun 구매 + Cloud Run 도메인 매핑).
+  운영 `REDIRECT_URI`는 `https://mfw.worldapex.studio/auth/callback`이며,
+  배포 스크립트가 `PUBLIC_BASE_URL` 기준으로 주입한다. 설정 절차는 `SETUP.md` §9.1 참조.
 
 ---
 

@@ -54,8 +54,14 @@ pip install -r requirements-dev.txt      # 실행 + 테스트(pytest)
 2. 애플리케이션 유형: **웹 애플리케이션**
 3. **승인된 리디렉션 URI** 등록
    - 로컬: `http://localhost:8090/auth/callback`
-   - 배포: `https://<service>-<project-number>.asia-northeast3.run.app/auth/callback`
-4. **클라이언트 ID**와 **클라이언트 보안 비밀** 복사
+   - 운영: `https://mfw.worldapex.studio/auth/callback`
+   - (도메인 매핑 전 확인용) `https://<service>-<project-number>.asia-northeast3.run.app/auth/callback`
+
+   > 운영 도메인은 `mfw.worldapex.studio`이며 Cloud Run 도메인 매핑으로 연결되어 있다.
+   > 등록된 URI와 `REDIRECT_URI` 값이 한 글자라도 다르면 `redirect_uri_mismatch`가 발생한다.
+
+4. **승인된 자바스크립트 원본**에 `https://mfw.worldapex.studio` 등록
+5. **클라이언트 ID**와 **클라이언트 보안 비밀** 복사
 
 ---
 
@@ -80,11 +86,12 @@ cp .env.example .env
 | `GOOGLE_CLIENT_ID` | ✅ | — | OAuth 클라이언트 ID |
 | `GOOGLE_CLIENT_SECRET` | ✅ | — | OAuth 클라이언트 보안 비밀 |
 | `FLASK_SECRET_KEY` | ✅ | — | 세션 서명 키. **운영 환경에서 미설정 시 앱이 시작되지 않는다** |
-| `REDIRECT_URI` | ✅ | `http://localhost:8090/auth/callback` | OAuth 콜백. 3.2에 등록한 값과 정확히 일치해야 한다 |
+| `REDIRECT_URI` | ✅ | `http://localhost:8090/auth/callback` | OAuth 콜백. 3.2에 등록한 값과 정확히 일치해야 한다. 운영은 `https://mfw.worldapex.studio/auth/callback` |
 | `APP_ENV` | | `production` | `development` 지정 시 HTTP 허용 · 디버그 로그 · 쿠키 Secure 해제 |
 | `TMDB_API_KEY` | | (빈 값) | 없으면 TMDb 보강 생략 |
 | `SESSION_LIFETIME_HOURS` | | `12` | Flask 세션 쿠키 수명. 장기 로그인은 `device_id`(90일)가 담당하므로 짧게 유지한다 |
 | `TMDB_ENRICH_CHUNK` | | `15` | 한 요청에서 동기 보강할 항목 수. 늘리면 요청 시간이 길어져 타임아웃 위험이 커진다 |
+| `PUBLIC_BASE_URL` | | `https://mfw.worldapex.studio` | **배포 스크립트 전용.** Cloud Run에 주입할 `REDIRECT_URI`의 기준 주소 |
 
 `FLASK_SECRET_KEY` 생성:
 
@@ -184,13 +191,55 @@ bash scripts/deploy.sh
 
 1. `gcloud auth login` 완료
 2. `.env`에 필수 값이 모두 채워져 있을 것
-3. 3.2의 승인된 리디렉션 URI에 Cloud Run URL이 등록되어 있을 것
+3. 3.2의 승인된 리디렉션 URI에 `https://mfw.worldapex.studio/auth/callback` 이 등록되어 있을 것
+4. 9.1의 도메인 매핑이 `Ready` 상태일 것
+
+배포 스크립트는 로컬 `.env`의 `REDIRECT_URI`(localhost) 대신
+`PUBLIC_BASE_URL`(기본값 `https://mfw.worldapex.studio`) 기준 콜백 URI를
+Cloud Run 환경 변수로 주입한다.
 
 대상 변경은 환경 변수로 조정한다.
 
 ```bash
 GOOGLE_CLOUD_PROJECT=<project> CLOUD_RUN_REGION=<region> bash scripts/deploy.sh
+
+# 도메인 매핑 없이 Cloud Run 기본 URL로 배포·검증할 때
+PUBLIC_BASE_URL="https://my-favorite-watch-641162137323.asia-northeast3.run.app" \
+  bash scripts/deploy.sh
 ```
+
+### 9.1 커스텀 도메인 (`mfw.worldapex.studio`)
+
+도메인은 Porkbun에서 구매했고, Cloud Run 도메인 매핑으로 서비스에 연결한다.
+
+1. Google Search Console에서 `worldapex.studio` 소유권 확인
+   (Porkbun DNS에 TXT 레코드 추가)
+2. 도메인 매핑 생성
+
+   ```bash
+   gcloud beta run domain-mappings create \
+     --service my-favorite-watch \
+     --domain mfw.worldapex.studio \
+     --region asia-northeast3
+   ```
+
+3. 출력된 레코드를 **Porkbun DNS**에 등록한다.
+   서브도메인이므로 통상 `CNAME  mfw → ghs.googlehosted.com.` 한 건이다.
+   Porkbun 기본 파킹 레코드(`ALIAS`/`A`)가 `mfw`에 남아 있으면 먼저 삭제한다.
+4. 상태 확인 — `CERTIFICATE_PENDING`이 사라지고 `Ready`가 될 때까지 기다린다
+   (DNS 전파 + 인증서 발급에 보통 15분~수 시간).
+
+   ```bash
+   gcloud beta run domain-mappings describe \
+     --domain mfw.worldapex.studio --region asia-northeast3
+   ```
+
+5. `https://mfw.worldapex.studio/` 접속 확인 후,
+   3.2의 승인된 리디렉션 URI와 자바스크립트 원본에 새 도메인이 등록되어 있는지 재확인한다.
+
+> ⚠️ 도메인을 바꾸면 `REDIRECT_URI`도 함께 바뀐다.
+> OAuth 클라이언트 등록값 · `scripts/deploy.sh`의 `PUBLIC_BASE_URL` · 실제 접속 주소
+> 셋이 모두 일치해야 한다. 하나라도 어긋나면 로그인 시 `redirect_uri_mismatch`가 발생한다.
 
 ### gunicorn 구성
 
@@ -300,7 +349,8 @@ gcloud firestore fields ttls update updated_at \
 | 증상 | 원인 · 조치 |
 |----|----|
 | `FLASK_SECRET_KEY 환경 변수가 설정되지 않았습니다` | 운영 환경에서 필수. `.env` 확인 |
-| `redirect_uri_mismatch` | `REDIRECT_URI`와 OAuth 클라이언트에 등록한 URI 불일치. 프로토콜·포트·경로까지 정확히 일치해야 한다 |
+| `redirect_uri_mismatch` | `REDIRECT_URI`와 OAuth 클라이언트에 등록한 URI 불일치. 프로토콜·포트·경로까지 정확히 일치해야 한다. 운영은 `https://mfw.worldapex.studio/auth/callback` (9.1 참조) |
+| 커스텀 도메인 접속 시 404 / 인증서 오류 | 도메인 매핑이 아직 `Ready`가 아니거나 Porkbun DNS에 파킹 레코드가 남아 있는 경우. 9.1의 4번으로 상태를 확인한다 |
 | 로그인이 7일마다 풀림 | OAuth 동의 화면이 테스트 모드. 3.1 참조 |
 | 매 로그인마다 동의 화면 반복 | `routes/auth.py`의 `prompt="consent"` 고정 (개선 예정) |
 | 보강 진행률이 멈춤 | `TMDB_API_KEY` 미설정이거나 Firestore 권한 부족. 서버 로그 확인 |
