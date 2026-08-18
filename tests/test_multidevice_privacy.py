@@ -22,7 +22,7 @@ os.environ.setdefault("USER_KEY_HMAC_SECRET", "t" * 48)
 import app as app_module  # noqa: E402
 from routes import auth as auth_module  # noqa: E402
 from services import firestore_session as fs  # noqa: E402
-from tests.fake_firestore import DELETE_FIELD, FakeFirestoreClient  # noqa: E402
+from fake_firestore import DELETE_FIELD, FakeFirestoreClient  # noqa: E402
 
 USER_A = "v1_user-key-aaa"
 USER_B = "v1_user-key-bbb"
