@@ -15,12 +15,14 @@
         <span class="app-name">🎬 My Favorite Watch</span>
         <span class="app-version">{{ app_version }}</span>
       </div>
-      <span class="app-username">{{ user.name }}</span>
+      <span class="app-username">{{ (user.name if user else '') or '내 계정' }}</span>
     </div>
     <div class="header-right">
       <a href="{{ url_for('settings.settings') }}" class="btn-icon" title="설정">⚙️</a>
     </div>
   </header>
+
+  {% include 'partials/flash.html' %}
 
   <!-- 검색/필터/정렬 툴바 -->
   <div class="toolbar">

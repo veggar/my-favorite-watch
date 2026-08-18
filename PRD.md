@@ -84,10 +84,55 @@
 - Google OAuth 2.0 (PKCE 지원)
 - 필요 스코프: `openid`, `userinfo.email`, `userinfo.profile`, `spreadsheets`, `drive.metadata.readonly`
 
+### 4.1.1 사용자 식별자
+
+- 사용자 식별에 **이메일을 사용하지 않는다.** 이메일은 변경될 수 있고 후보
+  공간이 좁아 사전 대입으로 추정하기 쉽다.
+- 로그인 시 ID Token의 서명·`iss`·`aud`·`exp`를 검증한 뒤 Google OIDC `sub`를
+  얻고, 서버 비밀키 기반 HMAC을 적용한 값을 내부 사용자 키로 쓴다.
+
+  ```text
+  user_key = "v1_" + BASE64URL(HMAC-SHA-256(USER_KEY_HMAC_SECRET, sub))
+  ```
+
+- 키 없는 SHA-256, 고정 공개 Salt, 레코드별 임의 Salt는 사용하지 않는다.
+  (레코드별 Salt는 멀티 디바이스의 결정적 조회를 깨뜨린다)
+- `USER_KEY_HMAC_SECRET`은 최소 32바이트이며 `FLASK_SECRET_KEY`와 공유하지
+  않는다. 운영에서는 Secret Manager로만 주입한다.
+- 키 회전에 대비해 `user_key_version`을 함께 저장한다.
+- HMAC 적용은 유출 시 직접 식별 위험을 줄이는 안전조치이며, 개인정보 처리
+  의무를 면제하지 않는다.
+
+### 4.1.2 저장 개인정보 범위
+
+- Firestore에 이메일·이름·프로필 이미지 URL 원문을 저장하지 않는다.
+- 표시용 이름·프로필은 검증된 ID Token 클레임에서 읽어 Flask 세션 수명
+  안에서만 사용한다. 세션 자동 복원 시에는 표시 정보가 비어 있을 수 있으며
+  화면은 이 상태를 정상으로 처리한다.
+- 애플리케이션 로그에 이메일, `sub`, `user_key`, access/refresh token,
+  OAuth code·state를 기록하지 않는다.
+
 ### 4.2 세션 관리
 
-- Flask 세션에 현재 요청 처리에 필요한 사용자·시트·OAuth 상태 저장
-- Firestore `refresh-token` 데이터베이스에 `device_id`별 refresh_token 저장
+- Flask 세션에 현재 요청 처리에 필요한 사용자 키·시트·OAuth 상태 저장
+- Firestore `refresh-token` 데이터베이스를 **두 컬렉션으로 분리**한다.
+
+  | 컬렉션 | 문서 ID | 내용 |
+  |----|----|----|
+  | `users` | `user_key` | 시트 연결 설정(사용자당 1개) |
+  | `device_sessions` | `device_id` | `user_key`, `refresh_token`, `expires_at`(90일) |
+
+- 같은 계정은 모든 기기에서 같은 `user_key`를 쓰므로 시트 설정이 공유되고,
+  refresh token은 기기별로 분리된다.
+- 자동 복원 조회 순서: `device_sessions/{device_id}` → `users/{user_key}`
+- 기기 로그아웃(`/logout`)은 해당 기기 문서만 삭제한다. 전체
+  로그아웃(`/logout-all`)은 같은 `user_key`의 모든 기기 문서를 삭제한다.
+- 같은 브라우저에서 계정을 전환하면 `user_key`가 달라지므로 이전 계정의
+  시트가 노출되지 않는다. 기기 문서의 `user_key`가 바뀌면 이전 계정의
+  refresh token을 먼저 제거한다.
+- 레거시 `sessions` 컬렉션은 전환 기간 동안 읽기 경로만 유지하며, 접근
+  시점에 신규 구조로 이전하고 원문 개인정보를 제거한다. 이전은 현재 로그인
+  이메일이 기존 문서의 이메일과 정확히 일치할 때만 수행한다.
 - `device_id` 쿠키는 HttpOnly / SameSite=Lax / 운영 환경 Secure 옵션으로 90일 유지
 - Flask 세션이 비어 있어도 `device_id` 쿠키와 Firestore 저장값으로 Google 인증 세션 자동 복원
 - 재로그인 시 Firestore에 저장된 시트 연결 정보를 세션으로 복원한다
@@ -109,6 +154,28 @@
 - `device_id` 쿠키 만료 역시 세션 자동 복원에 성공할 때마다 연장된다. 따라서 90일은 **마지막 사용 시점 기준**이며, 계속 사용하는 사용자는 재로그인 없이 유지된다.
 - 90일 이상 미사용 시에만 재로그인이 필요하다.
 - 전제: OAuth 동의 화면이 프로덕션으로 게시되어 있어야 한다. 테스트 모드에서는 Google이 refresh token을 7일 후 만료시키므로 위 90일 기준이 성립하지 않는다.
+- 도메인이 바뀌면 이전 도메인의 쿠키는 전달되지 않는다. 기기별 1회 재로그인을
+  정상 동작으로 정의하며, 쿠키 복사나 `SESSION_COOKIE_DOMAIN` 공유는 하지 않는다.
+
+#### 인증 실패 처리
+
+- 운영에서 공식 host(`REDIRECT_URI`의 host)가 아닌 주소로 접근하면 canonical
+  URL로 308 리디렉션한다. 다른 host에서 로그인을 시작하면 `state`를 담은 세션
+  쿠키가 콜백에 실리지 않아 로그인 루프가 발생하기 때문이다.
+- 콜백 실패는 화면에 추적 가능한 코드로만 노출하고 원인은 서버 로그에 남긴다.
+
+  | 코드 | 원인 |
+  |----|----|
+  | `AUTH_HOST` | 공식 host가 아닌 주소에서 로그인 시작 |
+  | `AUTH_STATE_MISSING` | 세션에 `oauth_state` 없음(쿠키 미전달·만료) |
+  | `AUTH_STATE_MISMATCH` | `state` 불일치 |
+  | `AUTH_DENIED` | 사용자가 Google 동의를 거부 |
+  | `AUTH_PROVIDER` | 그 외 Google 반환 오류 |
+  | `AUTH_TOKEN` | 토큰 교환 실패 |
+  | `AUTH_IDENTITY` | ID Token 검증 또는 사용자 키 생성 실패 |
+
+- 콜백 성공 시 목적지(`/` 또는 `/connect`)를 로그로 남긴다. OAuth code와
+  state 값은 어느 로그에도 기록하지 않는다.
 
 ### 4.3 시트 접근 권한
 
@@ -419,13 +486,14 @@
 
 | 기능 | 설명 |
 |------|------|
-| 계정 정보 표시 | 로그인한 Google 계정 이메일/이름 |
+| 계정 정보 표시 | 로그인한 Google 계정 이름/이메일. 세션 자동 복원 상태에서는 저장하지 않으므로 표시되지 않는다 |
 | 연결된 시트 정보 | 문서명 / 워크시트명 |
 | 문서명 변경 | Google Drive 문서 이름 변경 |
 | 워크시트명 변경 | 워크시트(탭) 이름 변경 |
 | 기본 정렬 저장 | 현재 정렬 기준을 기본값으로 저장 |
-| 시트 연결 해제 | 세션 시트 정보만 초기화 (데이터 삭제 없음) |
-| 로그아웃 | 세션 전체 초기화 |
+| 시트 연결 해제 | 세션과 `users/{user_key}` 문서의 시트 정보 초기화 (시트 데이터 삭제 없음) |
+| 이 기기에서 로그아웃 | 현재 기기 세션만 삭제. 다른 기기의 로그인은 유지된다 |
+| 모든 기기에서 로그아웃 | 같은 계정의 모든 기기 세션 삭제 (`/logout-all`) |
 
 ---
 

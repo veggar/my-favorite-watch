@@ -30,6 +30,8 @@
       <h1 class="connect-title">Google Sheet 연결</h1>
     </div>
 
+    {% include 'partials/flash.html' %}
+
     {# JS 미사용 환경(폼 폴백)에서 전달된 오류 #}
     {% if error %}
     <div class="alert alert-error">{{ error }}</div>

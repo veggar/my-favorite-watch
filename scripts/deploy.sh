@@ -11,8 +11,11 @@
 #   4. Cloud Run 도메인 매핑(mfw.worldapex.studio)이 살아 있는지 확인
 #      gcloud beta run domain-mappings list --region "$CLOUD_RUN_REGION"
 #
+#   5. Secret Manager 에 user-key-hmac-secret 시크릿이 있고 Cloud Run 서비스
+#      계정에 secretAccessor 권한이 부여되어 있는지 확인 (SETUP.md 5.1)
+#
 # 배포 후 1회성 설정 (재구축·프로젝트 이전 시에도 다시 필요):
-#   - Firestore tmdb_jobs TTL 정책, expires_at 색인 면제, sessions 수명 정책
+#   - Firestore tmdb_jobs / device_sessions TTL 정책, expires_at 색인 면제
 #   - 절차와 명령은 SETUP.md "10. 배포 후 1회성 설정" 참조
 
 set -e
@@ -43,6 +46,16 @@ PROJECT="${GOOGLE_CLOUD_PROJECT:-my-favorite-watch}"
 REGION="${CLOUD_RUN_REGION:-asia-northeast3}"
 SERVICE="my-favorite-watch"
 
+# 사용자 식별 키(HMAC)는 환경 변수 값으로 배포하지 않고 Secret Manager 에서
+# 주입한다. 시크릿 이름은 USER_KEY_SECRET_NAME 으로 덮어쓸 수 있다.
+USER_KEY_SECRET_NAME="${USER_KEY_SECRET_NAME:-user-key-hmac-secret}"
+
+if ! gcloud secrets describe "$USER_KEY_SECRET_NAME" --project="$PROJECT" >/dev/null 2>&1; then
+  echo "❌ Secret Manager 에 '${USER_KEY_SECRET_NAME}' 시크릿이 없습니다."
+  echo "   생성 절차는 SETUP.md '5.1 사용자 식별 키(HMAC)' 를 참조하세요."
+  exit 1
+fi
+
 # 서비스 공개 주소.
 # 커스텀 도메인(mfw.worldapex.studio)이 Cloud Run 도메인 매핑으로 연결되어 있다.
 # 도메인 매핑 이전 상태로 되돌려 확인해야 하면 아래처럼 실행 시 덮어쓴다.
@@ -60,6 +73,7 @@ echo "   서비스:   $SERVICE"
 echo "   공개 주소: $PUBLIC_BASE_URL"
 echo "   REDIRECT_URI(로컬): $REDIRECT_URI"
 echo "   REDIRECT_URI(배포): $DEPLOY_REDIRECT_URI"
+echo "   HMAC 시크릿: ${USER_KEY_SECRET_NAME}:latest (Secret Manager)"
 echo ""
 
 cd "$PROJECT_ROOT"
@@ -70,7 +84,8 @@ gcloud run deploy "$SERVICE" \
   --region "$REGION" \
   --project "$PROJECT" \
   --allow-unauthenticated \
-  --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET},FLASK_SECRET_KEY=${FLASK_SECRET_KEY},TMDB_API_KEY=${TMDB_API_KEY},REDIRECT_URI=${DEPLOY_REDIRECT_URI},APP_ENV=production"
+  --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET},FLASK_SECRET_KEY=${FLASK_SECRET_KEY},TMDB_API_KEY=${TMDB_API_KEY},REDIRECT_URI=${DEPLOY_REDIRECT_URI},APP_ENV=production" \
+  --set-secrets "USER_KEY_HMAC_SECRET=${USER_KEY_SECRET_NAME}:latest"
 
 echo ""
 echo "✅ 배포 완료"

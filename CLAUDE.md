@@ -69,6 +69,7 @@
   - **Install:** `pip install -r requirements.txt` (개발/테스트: `pip install -r requirements-dev.txt`)
   - **Run:** `python3 app.py` -> <http://localhost:8090>
     - 사전 준비: `.env.example`을 `.env`로 복사 후 `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `FLASK_SECRET_KEY` / `REDIRECT_URI` 입력. 로컬은 `APP_ENV=development`.
+    - `USER_KEY_HMAC_SECRET`(사용자 식별 키): 로컬 미설정 시 개발 전용 고정 키로 폴백한다. 운영은 Secret Manager 주입이 필수이며 미설정 시 로그인이 실패한다.
     - (선택) `TMDB_API_KEY` 미설정 시 TMDb 자동 보강만 생략된다.
     - (선택) `SESSION_LIFETIME_HOURS`(기본 12), `TMDB_ENRICH_CHUNK`(기본 15)
   - **Test:** `python3 -m pytest tests/ -v`

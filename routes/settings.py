@@ -3,6 +3,7 @@ import logging
 from flask import Blueprint, render_template, request, session, redirect, url_for
 from routes.auth import sheet_required, get_credentials
 from services.errors import friendly_error
+from services.firestore_session import clear_user_sheet
 from services.google_sheets import rename_spreadsheet, rename_worksheet, DEFAULT_WORKSHEET_NAME
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,8 @@ def settings():
             session.pop("sheet_id", None)
             session.pop("sheet_title", None)
             session.pop("worksheet_name", None)
+            # 사용자 문서도 비워야 다음 자동 복원에서 다시 연결되지 않는다.
+            clear_user_sheet(session.get("user_key", ""))
             return redirect(url_for("sheet.connect"))
         elif action == "rename_doc":
             new_title = request.form.get("new_doc_title", "").strip()
