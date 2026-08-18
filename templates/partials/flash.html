@@ -1,0 +1,11 @@
+{# 서버가 flash() 로 남긴 안내를 화면에 노출한다.
+
+   flash 를 렌더링하는 화면이 없으면 "재시도 가능한 오류"가 사용자에게
+   전달되지 않는다(조치안 9. 롤백 원칙). #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ 'error' if category == 'error' else 'info' }}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}

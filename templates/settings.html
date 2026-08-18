@@ -27,18 +27,30 @@
     <section class="settings-section">
       <h2 class="section-title">계정</h2>
       <div class="settings-item">
-        {% if user.picture %}
+        {% if user and user.picture %}
         <img src="{{ user.picture }}" alt="프로필" class="user-avatar">
         {% endif %}
         <div>
-          <div class="settings-value">{{ user.name }}</div>
-          <div class="settings-meta">{{ user.email }}</div>
+          <div class="settings-value">{{ (user.name if user else '') or '내 계정' }}</div>
+          <div class="settings-meta">
+            {{ (user.email if user else '') or '로그인 세션이 자동 복원되어 계정 정보는 표시되지 않습니다.' }}
+          </div>
         </div>
       </div>
       <form method="post" action="{{ url_for('auth.logout') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="btn btn-danger btn-full">로그아웃</button>
+        <button type="submit" class="btn btn-danger btn-full">이 기기에서 로그아웃</button>
       </form>
+      <form method="post" action="{{ url_for('auth.logout_all') }}" style="margin-top:8px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-danger btn-full"
+                onclick="return confirm('모든 기기에서 로그아웃합니다. 계속할까요?');">
+          모든 기기에서 로그아웃
+        </button>
+      </form>
+      <p class="settings-meta" style="margin-top:8px;">
+        모든 기기에서 로그아웃하면 다른 브라우저 · 기기의 자동 로그인도 함께 해제됩니다.
+      </p>
     </section>
 
     <!-- 연결된 시트 -->

@@ -22,7 +22,7 @@ from services.google_sheets import (
 )
 from services.tmdb import enrich_item, enrich_items_batch
 from services.tmdb_tracker import mark_pending
-from services.firestore_session import update_sheet
+from services.firestore_session import update_sheet_from_session
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,8 @@ def _save_sheet_session(sheet_id: str, sheet_title: str, worksheet_name: str):
     session["sheet_id"] = sheet_id
     session["sheet_title"] = sheet_title
     session["worksheet_name"] = worksheet_name
-    update_sheet(request.cookies.get("device_id"))
+    # 시트 설정은 기기가 아니라 사용자 단위로 저장한다(멀티 디바이스 공유).
+    update_sheet_from_session(session.get("user_key", ""))
 
 
 class ConnectError(Exception):

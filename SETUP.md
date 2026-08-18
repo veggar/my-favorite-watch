@@ -86,6 +86,7 @@ cp .env.example .env
 | `GOOGLE_CLIENT_ID` | ✅ | — | OAuth 클라이언트 ID |
 | `GOOGLE_CLIENT_SECRET` | ✅ | — | OAuth 클라이언트 보안 비밀 |
 | `FLASK_SECRET_KEY` | ✅ | — | 세션 서명 키. **운영 환경에서 미설정 시 앱이 시작되지 않는다** |
+| `USER_KEY_HMAC_SECRET` | ✅(운영) | — | 내부 사용자 키 생성용 HMAC 키. 최소 32바이트. **운영에서는 Secret Manager 로만 주입한다**(5.1). 로컬은 미설정 시 개발 전용 고정 키로 폴백한다 |
 | `REDIRECT_URI` | ✅ | `http://localhost:8090/auth/callback` | OAuth 콜백. 3.2에 등록한 값과 정확히 일치해야 한다. 운영은 `https://mfw.worldapex.studio/auth/callback` |
 | `APP_ENV` | | `production` | `development` 지정 시 HTTP 허용 · 디버그 로그 · 쿠키 Secure 해제 |
 | `TMDB_API_KEY` | | (빈 값) | 없으면 TMDb 보강 생략 |
@@ -98,6 +99,49 @@ cp .env.example .env
 ```bash
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
+
+### 5.1 사용자 식별 키(HMAC)
+
+사용자 식별에 이메일을 쓰지 않는다. 로그인 시 검증한 Google OIDC `sub`에
+서버 비밀키 기반 HMAC을 적용한 값을 내부 사용자 키로 사용한다.
+
+```text
+user_key = "v1_" + BASE64URL(HMAC-SHA-256(USER_KEY_HMAC_SECRET, sub))
+```
+
+키 요건
+
+- 최소 32바이트의 독립 난수. `FLASK_SECRET_KEY`와 **같은 값을 쓰면 앱이 거부한다.**
+- 운영에서는 `.env`나 일반 Cloud Run 환경 변수가 아니라 Secret Manager로 주입한다.
+- 키를 바꾸면 모든 `user_key`가 바뀌어 기존 시트 연결이 끊긴다. 회전은
+  `user_key_version`을 올리는 마이그레이션 계획과 함께 수행한다.
+
+Secret Manager 등록 (최초 1회)
+
+```bash
+PROJECT_ID=my-favorite-watch
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+
+gcloud services enable secretmanager.googleapis.com --project="$PROJECT_ID"
+
+python3 -c "import secrets; print(secrets.token_urlsafe(48))" \
+  | tr -d '\n' \
+  | gcloud secrets create user-key-hmac-secret \
+      --project="$PROJECT_ID" --replication-policy=automatic --data-file=-
+
+gcloud secrets add-iam-policy-binding user-key-hmac-secret \
+  --project="$PROJECT_ID" \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+`scripts/deploy.sh`는 배포 전에 이 시크릿의 존재를 확인하고
+`--set-secrets USER_KEY_HMAC_SECRET=user-key-hmac-secret:latest`로 주입한다.
+시크릿 이름을 바꾸려면 `USER_KEY_SECRET_NAME` 환경 변수로 덮어쓴다.
+
+> 로컬 개발에서 `.env`에 값을 넣지 않으면 경고 로그와 함께 개발 전용 고정
+> 키를 사용한다. 운영에서는 폴백하지 않고 로그인이 `AUTH_IDENTITY` 오류로
+> 실패한다(이메일 저장으로 되돌아가지 않는다).
 
 ---
 
@@ -121,10 +165,20 @@ python3 -c "import secrets; print(secrets.token_hex(32))"
 
 | 컬렉션 | 문서 ID | 내용 |
 |----|----|----|
-| `sessions` | `device_id` | `refresh_token`, 사용자 정보, 마지막 연결 시트 |
+| `users` | `user_key` | 시트 연결 설정(`sheet_id` / `sheet_title` / `worksheet_name`), `schema_version` |
+| `device_sessions` | `device_id` | `user_key`, `refresh_token`, `expires_at`(90일) |
 | `tmdb_jobs` | `item_id` | TMDb 보강 진행 상태(`status`), `expires_at` |
+| `sessions` (레거시) | `device_id` | 이전 스키마. 전환 기간 동안 읽기 전용으로만 사용한다 |
 
-두 컬렉션 모두 앱이 자동 생성하므로 미리 만들 필요는 없다.
+모든 컬렉션은 앱이 자동 생성하므로 미리 만들 필요는 없다.
+
+**저장하지 않는 값**: 이메일, 이름, 프로필 이미지 URL은 어느 컬렉션에도
+저장하지 않는다. 표시용 정보는 Flask 세션 수명 안에서만 사용한다.
+
+**레거시 전환**: 기존 `sessions` 문서는 해당 사용자가 다시 로그인하거나
+자동 복원될 때 점진적으로 이전된다. 이전 시 시트 설정은 `users`로 옮기고
+`email`·`user` 필드는 삭제하며, 아직 재로그인하지 않은 다른 기기의 자동
+복원을 위해 `refresh_token`만 남는다. 안정화 후 컬렉션을 삭제한다.
 
 ### 6.3 권한
 
@@ -309,10 +363,30 @@ gcloud firestore indexes fields update expires_at \
   --disable-indexes
 ```
 
-### 10.3 `sessions` 컬렉션 수명 정책 (권장)
+### 10.3 `device_sessions` TTL 정책 (필수)
 
-`device_id` 쿠키는 90일이지만 Firestore `sessions` 문서는 영구 잔존한다
-(`refresh_token` 포함). `updated_at` 기준 TTL을 걸어 미사용 세션을 정리한다.
+`device_id` 쿠키는 90일이지만 Firestore 문서는 영구 잔존한다
+(`refresh_token` 포함). 앱이 `expires_at`을 마지막 사용 시각 + 90일로
+계산해 저장하므로, 오프셋 없이 TTL만 켠다.
+
+```bash
+gcloud firestore fields ttls update expires_at \
+  --collection-group=device_sessions \
+  --database=refresh-token \
+  --project=my-favorite-watch \
+  --enable-ttl
+
+gcloud firestore indexes fields update expires_at \
+  --collection-group=device_sessions \
+  --database=refresh-token \
+  --project=my-favorite-watch \
+  --disable-indexes
+```
+
+### 10.4 레거시 `sessions` 컬렉션 정리 (전환 기간)
+
+레거시 문서는 재로그인·자동 복원 시 신규 구조로 옮겨지며 원문 개인정보가
+제거된다. 미접속 계정의 문서는 `updated_at` 기준 TTL로 정리한다.
 
 ```bash
 gcloud firestore fields ttls update updated_at \
@@ -324,9 +398,19 @@ gcloud firestore fields ttls update updated_at \
 ```
 
 > `updated_at`은 마지막 사용 시각이므로 **오프셋 90d를 지정**한다.
-> `expires_at`(10.1)과 달리 앱이 만료 시각을 미리 계산해 두지 않는다.
+> 안정화 기간이 끝나면 애플리케이션의 레거시 읽기 경로를 제거한 뒤
+> 컬렉션 자체를 삭제한다.
 
-### 10.4 참고 문서
+### 10.5 마이그레이션 진행 확인
+
+값 자체는 로그에 남기지 않는다. 잔여 원문 문서 수만 집계한다.
+
+```bash
+# 원문 email 필드가 남아 있는 레거시 문서 수 (Firestore 콘솔 쿼리 빌더 사용)
+#   컬렉션: sessions / 필터: email != null
+```
+
+### 10.6 참고 문서
 
 - [Manage data retention with TTL policies — Firestore](https://cloud.google.com/firestore/native/docs/ttl)
 - [gcloud firestore fields ttls update](https://cloud.google.com/sdk/gcloud/reference/firestore/fields/ttls/update)
@@ -337,6 +421,11 @@ gcloud firestore fields ttls update updated_at \
 
 - [ ] 미등록 계정으로 로그인 → 시트 연결 플로우 정상 동작
 - [ ] 로그아웃 → 재로그인 시 시트 연결 정보가 유지되는지
+- [ ] 기기 2대에서 같은 계정 로그인 → `device_id`는 다르고 `user_key`는 같은지
+- [ ] 한 기기 로그아웃 후 다른 기기 세션이 유지되는지
+- [ ] 같은 브라우저에서 계정을 바꿨을 때 이전 계정 시트가 보이지 않는지
+- [ ] Firestore `users` · `device_sessions` 문서에 이메일·이름·프로필 URL이 없는지
+- [ ] Cloud Run 기본 URL로 접근 시 `mfw.worldapex.studio`로 308 이동하는지
 - [ ] 100건 이상 CSV 가져오기 → 전 항목이 완료 상태로 수렴하는지
 - [ ] 보강 진행 중 새로고침 → 진행률이 유지되고 자동 재개되는지
 - [ ] `gcloud firestore fields ttls list --database=refresh-token` → 정책 `ACTIVE`
