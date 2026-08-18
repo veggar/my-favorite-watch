@@ -221,17 +221,41 @@ python3 app.py
 
 ## 8. 테스트
 
+의존성이 설치된 환경에서 실행한다. 가상환경을 쓰는 것을 권장한다.
+
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+
 python3 -m pytest tests/ -v
 ```
 
 | 파일 | 대상 |
 |----|----|
+| `conftest.py` | 테스트 환경 격리 (아래 참조) |
+| `fake_firestore.py` | 인메모리 Firestore 대역 (테스트 헬퍼) |
 | `test_google_credentials.py` | 세션 쿠키에 비밀 값이 없는지 (P0-1) |
 | `test_tmdb_tracker.py` | 보강 상태가 프로세스 경계를 넘어 공유되는지 (P0-3) |
 | `test_tmdb_enrich_chunk.py` | 청크 동기 보강 · 부분 실패 격리 (P0-3) |
 | `test_session_lifetime.py` | 세션 수명 2계층 구조 (P0-5) |
 | `test_error_sanitization.py` | 예외 원문 비노출 (P0-6) |
+| `test_user_identity.py` | 검증된 `sub` 기반 HMAC 사용자 키 |
+| `test_multidevice_privacy.py` | 멀티 디바이스 · 계정 격리 · 개인정보 최소화 · 콜백 진단 |
+
+### 8.1 환경 변수 격리
+
+테스트는 `tests/conftest.py`가 지정한 테스트 전용 값으로만 동작한다.
+셸에 실제 값이 export 되어 있어도(예: 로컬 실행을 위해 `set -a; source .env`
+를 한 경우) 그 값이 테스트로 새어 들어가지 않는다.
+
+이 격리가 없으면 각 모듈의 `os.environ.setdefault()`가 무시되어
+
+- 테스트가 실제 클라이언트 ID와 비교하다 실패하고,
+- 실패 메시지에 실제 자격증명이 그대로 출력된다.
+
+같은 이유로 `TMDB_API_KEY`도 빈 값으로 고정해 외부 호출을 막는다.
+특정 값을 바꿔야 하는 테스트는 `monkeypatch.setenv()`를 사용한다.
 
 ---
 
