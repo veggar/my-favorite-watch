@@ -90,7 +90,8 @@ cp .env.example .env
 | `REDIRECT_URI` | ✅ | `http://localhost:8090/auth/callback` | OAuth 콜백. 3.2에 등록한 값과 정확히 일치해야 한다. 운영은 `https://mfw.worldapex.studio/auth/callback` |
 | `APP_ENV` | | `production` | `development` 지정 시 HTTP 허용 · 디버그 로그 · 쿠키 Secure 해제 |
 | `TMDB_API_KEY` | | (빈 값) | 없으면 TMDb 보강 생략 |
-| `SESSION_LIFETIME_HOURS` | | `12` | Flask 세션 쿠키 수명. 장기 로그인은 `device_id`(90일)가 담당하므로 짧게 유지한다 |
+| `AUTH_FRESHNESS_HOURS` | | `12` | access token 계층의 신선도. 초과 시 세션에서 토큰을 폐기하고 Firestore refresh token으로 재발급한다. 미설정 시 `SESSION_LIFETIME_HOURS` 값을 사용한다 |
+| `SESSION_LIFETIME_HOURS` | | `12` | (구 변수) `AUTH_FRESHNESS_HOURS`의 폴백. 쿠키 수명은 90일 고정이며 이 값이 아니다 |
 | `TMDB_ENRICH_CHUNK` | | `15` | 한 요청에서 동기 보강할 항목 수. 늘리면 요청 시간이 길어져 타임아웃 위험이 커진다 |
 | `PUBLIC_BASE_URL` | | `https://mfw.worldapex.studio` | **배포 스크립트 전용.** Cloud Run에 주입할 `REDIRECT_URI`의 기준 주소 |
 
@@ -286,6 +287,29 @@ PUBLIC_BASE_URL="https://my-favorite-watch-641162137323.asia-northeast3.run.app"
   bash scripts/deploy.sh
 ```
 
+### 9.0 도메인 경로 구조 (중요)
+
+```text
+브라우저 ──▶ Firebase Hosting(CDN) ──rewrite──▶ Cloud Run
+mfw.worldapex.studio   my-favorite-watch.web.app   my-favorite-watch / asia-northeast3
+```
+
+DNS(Porkbun): `mfw` → CNAME `my-favorite-watch.web.app`
+구성 사본과 제약은 [`hosting/README.md`](hosting/README.md) 참조.
+
+**애플리케이션에 직접 영향을 주는 제약**
+
+1. Firebase Hosting은 백엔드로 **`__session` 쿠키만 전달**한다. 다른 이름의 쿠키는
+   제거되어 Cloud Run에 도달하지 않는다. 그래서 세션 쿠키 이름이 `__session`이고
+   기기 식별자(`device_id`)는 별도 쿠키가 아니라 세션 내부 필드다.
+   **새 쿠키를 추가하는 변경은 이 환경에서 동작하지 않는다.**
+2. 동적 응답은 CDN 캐시 대상이 되지 않도록 앱이 `Cache-Control: private, no-store`를 붙인다.
+3. `firebase-public/`에 `index.html`이 있으면 `/`가 Cloud Run에 도달하지 않는다.
+4. 백엔드 응답 대기 한도는 60초다(`TMDB_ENRICH_CHUNK` 기본값 유지 근거).
+
+Cloud Run 배포와 Hosting 배포는 독립이다. 서비스 이름·리전이 그대로면
+Cloud Run만 배포하면 된다.
+
 ### 9.1 커스텀 도메인 (`mfw.worldapex.studio`)
 
 도메인은 Porkbun에서 구매했고, Cloud Run 도메인 매핑으로 서비스에 연결한다.
@@ -445,6 +469,9 @@ gcloud firestore fields ttls update updated_at \
 
 - [ ] 미등록 계정으로 로그인 → 시트 연결 플로우 정상 동작
 - [ ] 로그아웃 → 재로그인 시 시트 연결 정보가 유지되는지
+- [ ] 브라우저에 `__session` 쿠키가 생기고 콜백 요청에 함께 전달되는지 (DevTools)
+- [ ] `Set-Cookie`가 `__session` **하나만** 나가는지 (다른 쿠키는 Firebase가 제거한다)
+- [ ] 동적 페이지 응답에 `Cache-Control: private, no-store`가 붙는지
 - [ ] 기기 2대에서 같은 계정 로그인 → `device_id`는 다르고 `user_key`는 같은지
 - [ ] 한 기기 로그아웃 후 다른 기기 세션이 유지되는지
 - [ ] 같은 브라우저에서 계정을 바꿨을 때 이전 계정 시트가 보이지 않는지

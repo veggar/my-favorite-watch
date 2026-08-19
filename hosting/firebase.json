@@ -1,0 +1,19 @@
+{
+  "hosting": {
+    "public": "./firebase-public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "run": {
+          "serviceId": "my-favorite-watch",
+          "region": "asia-northeast3"
+        }
+      }
+    ]
+  }
+}
