@@ -216,9 +216,22 @@ def client(db):
 
 
 def test_missing_state_is_distinguished_from_mismatch(client):
+    """쿠키는 도달했는데 state 만 없는 경우."""
+    with client.session_transaction() as sess:
+        sess["_csrf_token"] = "seed"  # 세션 쿠키만 만들고 oauth_state 는 비운다
     resp = client.get("/auth/callback?state=abc&code=x")
     assert resp.status_code == 302
     assert "e=AUTH_STATE_MISSING" in resp.headers["Location"]
+
+
+def test_absent_session_cookie_is_reported_separately(client):
+    """세션 쿠키 자체가 오지 않으면 전달 경로 문제로 분기해야 한다.
+
+    Firebase Hosting 은 `__session` 외의 쿠키를 백엔드로 전달하지 않는다.
+    이 코드가 관측되면 애플리케이션이 아니라 Hosting 구성을 봐야 한다.
+    """
+    resp = client.get("/auth/callback?state=abc&code=x")
+    assert "e=AUTH_COOKIE_BLOCKED" in resp.headers["Location"]
 
 
 def test_state_mismatch_returns_its_own_code(client):

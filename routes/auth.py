@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 
 from flask import (
     Blueprint,
+    current_app,
     flash,
     make_response,
     redirect,
@@ -37,6 +38,7 @@ from services.google_credentials import (
     credentials_from_session,
     session_payload,
 )
+from services.session_state import auth_timestamp, new_device_id
 from services.user_identity import (
     USER_KEY_VERSION,
     UserIdentityError,
@@ -49,10 +51,10 @@ auth_bp = Blueprint("auth", __name__)
 
 REDIRECT_URI = os.environ.get("REDIRECT_URI", "http://localhost:8090/auth/callback")
 
-# 장기 로그인 유지 기간. Flask 세션(단기)이 만료돼도 이 쿠키와 Firestore
-# refresh_token 으로 세션을 자동 복원하므로, 사용자가 체감하는 로그인 유지
-# 기간은 이 값이 기준이 된다.
-DEVICE_ID_MAX_AGE = 60 * 60 * 24 * 90  # 90일
+# 전환 기간 동안 남아 있는 예전 쿠키. 더 이상 발급하지 않고 로그아웃 시
+# 삭제만 한다. Firebase Hosting 이 이 쿠키를 백엔드로 전달하지 않으므로
+# 읽기 용도로도 쓸 수 없다.
+LEGACY_DEVICE_COOKIE = "device_id"
 
 # ── 인증 실패 코드 (P0-1) ─────────────────────────────────────────────────
 # 화면에는 원인별 안내 문구와 추적용 코드만 노출하고, 실제 원인(예외 타입 ·
@@ -66,6 +68,10 @@ AUTH_ERROR_MESSAGES = {
     "AUTH_TOKEN": "인증 토큰을 발급받지 못했습니다. 잠시 후 다시 시도해주세요.",
     "AUTH_IDENTITY": "계정 확인에 실패했습니다. 잠시 후 다시 시도해주세요.",
     "AUTH_HOST": "잘못된 주소로 접속했습니다. 공식 주소에서 다시 시도해주세요.",
+    "AUTH_COOKIE_BLOCKED": (
+        "브라우저 쿠키가 전달되지 않아 로그인을 완료할 수 없습니다. "
+        "쿠키 차단 설정을 확인하거나 다른 브라우저에서 시도해주세요."
+    ),
 }
 
 
@@ -74,20 +80,30 @@ def canonical_host() -> str:
     return urlsplit(REDIRECT_URI).netloc
 
 
-def _cookie_secure() -> bool:
-    return os.environ.get("APP_ENV", "production").lower() not in ("development", "dev", "local")
+def session_cookie_name() -> str:
+    """현재 앱이 사용하는 세션 쿠키 이름(Firebase Hosting 제약으로 `__session`)."""
+    return current_app.config.get("SESSION_COOKIE_NAME") or "session"
 
 
-def set_device_cookie(resp, device_id: str) -> None:
-    """device_id 쿠키를 발급/연장한다. 만료는 마지막 사용 시점 기준으로 갱신된다."""
-    resp.set_cookie(
-        "device_id",
-        device_id,
-        max_age=DEVICE_ID_MAX_AGE,
-        httponly=True,
-        samesite="Lax",
-        secure=_cookie_secure(),
+def _log_cookie_diagnostics() -> bool:
+    """콜백 요청이 세션 쿠키를 실어 왔는지 기록하고 결과를 반환한다.
+
+    쿠키 **이름만** 남긴다. 값에는 세션 서명과 식별자가 들어 있다.
+    이름 목록만으로도 "쿠키가 아예 오지 않음(프록시·브라우저 차단)"과
+    "쿠키는 왔는데 state 만 없음"을 구분할 수 있다.
+    """
+    name = session_cookie_name()
+    present = name in request.cookies
+    logger.info(
+        "callback cookies=%s session_cookie=%s host=%s xf_host=%s xf_proto=%s fh_host=%s",
+        sorted(request.cookies.keys()) or "[]",
+        "present" if present else "MISSING",
+        request.host,
+        request.headers.get("X-Forwarded-Host", "-"),
+        request.headers.get("X-Forwarded-Proto", "-"),
+        request.headers.get("X-FH-Requested-Host", "-"),
     )
+    return present
 
 
 def _build_flow():
@@ -144,6 +160,11 @@ def google_login():
 
 @auth_bp.route("/auth/callback")
 def auth_callback():
+    # ── 0. 쿠키 도달 여부 진단 (P0-5-4) ───────────────────────────────
+    # Firebase Hosting 은 `__session` 외의 쿠키를 백엔드로 전달하지 않는다.
+    # 쿠키가 아예 없으면 애플리케이션이 아니라 전달 경로의 문제다.
+    cookie_present = _log_cookie_diagnostics()
+
     # ── 1. 공급자 오류 정규화 ──────────────────────────────────────────
     provider_error = request.args.get("error")
     if provider_error:
@@ -159,6 +180,11 @@ def auth_callback():
     # ── 2. state 검증 (누락과 불일치를 구분) ──────────────────────────
     expected_state = session.pop("oauth_state", None)
     if not expected_state:
+        if not cookie_present:
+            # 세션 쿠키 자체가 도달하지 않았다. 프록시(Firebase Hosting)의
+            # 쿠키 정책이나 브라우저 차단이 원인이며 코드로 복구할 수 없다.
+            logger.warning("OAuth callback rejected: session cookie not delivered")
+            return _auth_failed("AUTH_COOKIE_BLOCKED")
         logger.warning("OAuth callback rejected: oauth_state missing in session")
         return _auth_failed("AUTH_STATE_MISSING")
     if not secrets.compare_digest(request.args.get("state", ""), expected_state):
@@ -189,6 +215,10 @@ def auth_callback():
         logger.warning("User identity resolution failed: %s", e)
         return _auth_failed("AUTH_IDENTITY")
 
+    # 기기 식별자는 쿠키가 아니라 세션 안에 있으므로, 세션을 비우기 전에
+    # 꺼내 두었다가 다시 넣는다(같은 브라우저는 같은 기기로 유지).
+    device_id = session.get("device_id") or new_device_id()
+
     # 계정 전환 시 이전 계정의 시트·설정이 남지 않도록 세션을 비우고 시작한다.
     session.clear()
     # permanent 를 지정하지 않으면 브라우저 종료 시 사라지는 세션 쿠키가 되어
@@ -198,8 +228,11 @@ def auth_callback():
     # client_secret / refresh_token 은 Flask 세션 쿠키가 암호화되지 않으므로
     # 절대 담지 않는다. (security.md "Sanitization")
     session["credentials"] = session_payload(credentials)
+    session["device_id"] = device_id
     session["user_key"] = user_key
     session["user_key_version"] = USER_KEY_VERSION
+    # access token 계층의 신선도 기준 시각(조치안 개정 2판 2.2)
+    session["auth_at"] = auth_timestamp()
     # 표시용 이름 · 프로필 이미지는 검증된 ID Token 클레임에서 가져오며
     # Flask 세션 수명 안에서만 사용한다(Firestore 에 저장하지 않는다).
     session["user"] = {
@@ -217,7 +250,6 @@ def auth_callback():
     apply_sheet_to_session(config)
 
     # ── 6. 기기 세션 저장 ─────────────────────────────────────────────
-    device_id = request.cookies.get("device_id") or secrets.token_urlsafe(32)
     existing = get_device_session(device_id)
     if existing and existing.get("user_key") and existing["user_key"] != user_key:
         # 같은 브라우저에서 계정이 바뀐 경우. 이전 계정의 refresh token 이
@@ -239,32 +271,36 @@ def auth_callback():
     has_sheet = bool(session.get("sheet_id"))
     logger.info("oauth callback success → %s", "/" if has_sheet else "/connect")
     dest = url_for("main.index") if has_sheet else url_for("sheet.connect")
-    resp = make_response(redirect(dest))
-    set_device_cookie(resp, device_id)
-    return resp
+    return redirect(dest)
 
 
 @auth_bp.route("/logout", methods=["POST"])
 def logout():
     """현재 기기만 로그아웃한다. 다른 기기 세션은 유지된다."""
-    device_id = request.cookies.get("device_id")
-    delete_device_session(device_id)
+    delete_device_session(session.get("device_id"))
     session.clear()
     resp = make_response(redirect(url_for("auth.login")))
-    resp.delete_cookie("device_id")
+    # 전환 기간 동안 남아 있을 수 있는 예전 쿠키를 함께 정리한다.
+    resp.delete_cookie(LEGACY_DEVICE_COOKIE)
     return resp
 
 
 @auth_bp.route("/logout-all", methods=["POST"])
 def logout_all():
-    """전체 로그아웃 — 같은 계정의 모든 기기 세션을 무효화한다."""
+    """전체 로그아웃 — 같은 계정의 모든 기기 세션을 무효화한다.
+
+    다른 기기의 `__session` 쿠키 자체는 즉시 폐기할 수 없으나, 그 안의
+    access token 은 만료되고 재발급은 삭제된 Firestore 문서 때문에
+    실패한다. 따라서 최대 access token 수명만큼의 지연을 두고 무효화된다
+    (조치안 개정 2판 2.4).
+    """
     user_key = session.get("user_key")
     if user_key:
         count = delete_all_device_sessions(user_key)
         logger.info("full logout: %d device session(s) removed", count)
     session.clear()
     resp = make_response(redirect(url_for("auth.login")))
-    resp.delete_cookie("device_id")
+    resp.delete_cookie(LEGACY_DEVICE_COOKIE)
     return resp
 
 
@@ -282,7 +318,7 @@ def get_credentials():
     if creds.token and not creds.expired:
         return creds
 
-    device_id = request.cookies.get("device_id")
+    device_id = session.get("device_id")
     refresh_token = get_refresh_token(device_id)
     if not refresh_token:
         # Firestore 미구성(로컬 개발) 등으로 갱신이 불가능한 경우.
@@ -293,6 +329,8 @@ def get_credentials():
     creds = credentials_from_session(creds_data, refresh_token)
     creds.refresh(google.auth.transport.requests.Request())
     session["credentials"] = session_payload(creds)
+    # 저장된 refresh token 으로 재발급했으므로 단기 계층도 신선해진다.
+    session["auth_at"] = auth_timestamp()
     if creds.refresh_token and creds.refresh_token != refresh_token:
         update_refresh_token(device_id, creds.refresh_token)
     return creds
