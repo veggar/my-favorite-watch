@@ -2,6 +2,7 @@ import logging
 
 from flask import Blueprint, render_template, request, session, redirect, url_for
 from routes.auth import sheet_required, get_credentials
+from services import tmdb as tmdb_service
 from services.errors import friendly_error
 from services.firestore_session import clear_user_sheet
 from services.google_sheets import rename_spreadsheet, rename_worksheet, DEFAULT_WORKSHEET_NAME
@@ -74,5 +75,8 @@ def settings():
         default_watched=session.get("default_watched", "all"),
         sort_options=SORT_OPTIONS_LABELS,
         categories=["전체", "영화", "드라마", "다큐", "애니", "기타"],
+        # TMDB_API_KEY 미설정 시 자동 보강이 조용히 건너뛰어지므로,
+        # 사용자가 원인을 알 수 있도록 상태를 노출한다 (P1-7).
+        tmdb_enabled=bool(tmdb_service.TMDB_API_KEY),
         error=error,
     )

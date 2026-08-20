@@ -3,7 +3,7 @@
 로컬 개발 환경 구성부터 Cloud Run 배포, 배포 후 1회성 설정까지 다룬다.
 기능 정의는 `PRD.md`, 작업 규칙은 `CLAUDE.md`를 따른다.
 
-- 대상 버전: v1.3.3
+- 대상 버전: v1.6.0
 - 런타임: Python 3.12 / Flask (SSR)
 - 배포: Cloud Run (`asia-northeast3`)
 
@@ -169,6 +169,7 @@ gcloud secrets add-iam-policy-binding user-key-hmac-secret \
 | `users` | `user_key` | 시트 연결 설정(`sheet_id` / `sheet_title` / `worksheet_name`), `schema_version` |
 | `device_sessions` | `device_id` | `user_key`, `refresh_token`, `expires_at`(90일) |
 | `tmdb_jobs` | `item_id` | TMDb 보강 진행 상태(`status`), `expires_at` |
+| `server_sessions` | `sha256(session_id)` | 서버 측 세션(`credentials` · `user_key` · `user` · 시트 캐시 · `auth_at`), `expires_at`(90일) |
 | `sessions` (레거시) | `device_id` | 이전 스키마. 전환 기간 동안 읽기 전용으로만 사용한다 |
 
 모든 컬렉션은 앱이 자동 생성하므로 미리 만들 필요는 없다.
@@ -243,6 +244,7 @@ python3 -m pytest tests/ -v
 | `test_error_sanitization.py` | 예외 원문 비노출 (P0-6) |
 | `test_user_identity.py` | 검증된 `sub` 기반 HMAC 사용자 키 |
 | `test_multidevice_privacy.py` | 멀티 디바이스 · 계정 격리 · 개인정보 최소화 · 콜백 진단 |
+| `test_server_session.py` | 서버 측 세션 — 쿠키에는 `_sid`만, 민감 값은 Firestore (task-2026-08-003) |
 
 ### 8.1 환경 변수 격리
 
@@ -431,6 +433,30 @@ gcloud firestore indexes fields update expires_at \
   --disable-indexes
 ```
 
+### 10.3.1 `server_sessions` TTL 정책 (필수)
+
+서버 측 세션 문서(access token · user_key · 시트 캐시)는 앱이
+`expires_at`(마지막 저장 + 90일)을 기록한다. 만료 문서는 조회 시에도
+삭제되지만, 다시 방문하지 않는 브라우저의 문서는 TTL로 정리해야 한다.
+
+```bash
+gcloud firestore fields ttls update expires_at \
+  --collection-group=server_sessions \
+  --database=refresh-token \
+  --project=my-favorite-watch \
+  --enable-ttl
+
+gcloud firestore indexes fields update expires_at \
+  --collection-group=server_sessions \
+  --database=refresh-token \
+  --project=my-favorite-watch \
+  --disable-indexes
+```
+
+> 문서 키는 `session_id`의 sha256 해시라서 문서 키만으로는 유효한 쿠키를
+> 만들 수 없다. 전체 로그아웃(`/logout-all`)은 `user_key` 동일 문서를 즉시
+> 삭제하므로 TTL과 무관하게 동작한다.
+
 ### 10.4 레거시 `sessions` 컬렉션 정리 (전환 기간)
 
 레거시 문서는 재로그인·자동 복원 시 신규 구조로 옮겨지며 원문 개인정보가
@@ -448,6 +474,14 @@ gcloud firestore fields ttls update updated_at \
 > `updated_at`은 마지막 사용 시각이므로 **오프셋 90d를 지정**한다.
 > 안정화 기간이 끝나면 애플리케이션의 레거시 읽기 경로를 제거한 뒤
 > 컬렉션 자체를 삭제한다.
+
+### 10.4.1 레거시 `sessions` 이메일 조회 인덱스 (조건부, P1-4)
+
+레거시 마이그레이션(`migrate_legacy_user`)은 `email` 단일 필드 equality
+쿼리(`limit 20`)라 기본 인덱스로 동작한다. 다만 같은 이메일의 레거시 문서가
+20개를 넘으면 최신 문서가 잘려 시트 인수인계가 부정확해질 수 있다.
+그 경우에만 `email` + `updated_at`(내림차순) 복합 인덱스를 추가하고 쿼리에
+`order_by`를 붙인다. 전환 기간 종료 후 레거시 경로와 함께 제거한다.
 
 ### 10.5 마이그레이션 진행 확인
 
@@ -481,10 +515,24 @@ gcloud firestore fields ttls update updated_at \
 - [ ] 보강 진행 중 새로고침 → 진행률이 유지되고 자동 재개되는지
 - [ ] `gcloud firestore fields ttls list --database=refresh-token` → 정책 `ACTIVE`
 - [ ] 세션 쿠키를 디코드했을 때 `client_secret` · `refresh_token`이 없는지
+- [ ] 세션 쿠키를 디코드했을 때 `credentials` · `user_key` · `user` 없이 `_sid`만 있는지 (서버 측 세션, task-2026-08-003)
+- [ ] 로그인 후 Firestore `server_sessions`에 문서가 생기고, 로그아웃 시 삭제되는지
+- [ ] `server_sessions` TTL 정책이 `ACTIVE`인지 (10.3.1)
 
 ---
 
-## 12. 자주 겪는 문제
+## 12. 지원 규모 제약 (P1-5)
+
+목록 조회 · 등록 · 중복 검사는 워크시트 전체를 읽는 구조다.
+**지원 상한은 워크시트당 2,000행**으로 안내한다. 이를 넘으면 목록 로딩과
+등록 응답이 눈에 띄게 느려질 수 있다(Google Sheets API 응답 크기 비례).
+
+- 상한 초과가 필요해지면: 중복 검사용 조회를 필요한 열(`id` · 제목)로
+  축소하고, 목록 조회에 페이지네이션을 도입한다 (후속 작업).
+
+---
+
+## 13. 자주 겪는 문제
 
 | 증상 | 원인 · 조치 |
 |----|----|

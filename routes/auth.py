@@ -38,6 +38,7 @@ from services.google_credentials import (
     credentials_from_session,
     session_payload,
 )
+from services import server_session
 from services.session_state import auth_timestamp, new_device_id
 from services.user_identity import (
     USER_KEY_VERSION,
@@ -289,15 +290,21 @@ def logout():
 def logout_all():
     """전체 로그아웃 — 같은 계정의 모든 기기 세션을 무효화한다.
 
-    다른 기기의 `__session` 쿠키 자체는 즉시 폐기할 수 없으나, 그 안의
-    access token 은 만료되고 재발급은 삭제된 Firestore 문서 때문에
-    실패한다. 따라서 최대 access token 수명만큼의 지연을 두고 무효화된다
-    (조치안 개정 2판 2.4).
+    - `device_sessions`(refresh token) 삭제 → 재발급 차단
+    - `server_sessions` 삭제 → 서버 측 세션이 즉시 무효화된다. 다른 기기
+      쿠키에는 session_id 만 남아 있고, 다음 요청에서 문서를 찾지 못해
+      재인증이 요구된다 (task-2026-08-003).
+    - Firestore 미구성 폴백(쿠키 직저장) 환경에서만 기존처럼 access token
+      만료까지의 지연이 남는다 (조치안 개정 2판 2.4).
     """
     user_key = session.get("user_key")
     if user_key:
-        count = delete_all_device_sessions(user_key)
-        logger.info("full logout: %d device session(s) removed", count)
+        device_count = delete_all_device_sessions(user_key)
+        server_count = server_session.delete_all_sessions_for_user(user_key)
+        logger.info(
+            "full logout: %d device session(s), %d server session(s) removed",
+            device_count, server_count,
+        )
     session.clear()
     resp = make_response(redirect(url_for("auth.login")))
     resp.delete_cookie(LEGACY_DEVICE_COOKIE)

@@ -98,6 +98,25 @@
       </form>
     </section>
 
+    <!-- TMDb 연동 상태 (P1-7) -->
+    <section class="settings-section">
+      <h2 class="section-title">TMDb 연동</h2>
+      <div class="settings-item">
+        <div>
+          {% if tmdb_enabled %}
+          <div class="settings-value">🟢 활성</div>
+          <div class="settings-meta">등록 · 가져오기 시 포스터와 줄거리를 자동으로 보강합니다.</div>
+          {% else %}
+          <div class="settings-value">⚪ 비활성</div>
+          <div class="settings-meta">
+            서버에 TMDB_API_KEY 가 설정되지 않아 포스터 · 줄거리 자동 보강이 동작하지 않습니다.
+            직접 입력한 정보는 정상적으로 저장됩니다.
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
     <!-- 기본 설정 -->
     <section class="settings-section">
       <h2 class="section-title">기본 표시 설정</h2>
