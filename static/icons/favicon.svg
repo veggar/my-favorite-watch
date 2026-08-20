@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="My Favorite Watch">
+  <title>My Favorite Watch</title>
+  <!-- 16~32px 로 축소돼도 형태가 뭉개지지 않도록 퍼포레이션을 뺀 단순화 버전 -->
+  <rect x="0" y="0" width="512" height="512" rx="112" ry="112" fill="#4f46e5"/>
+  <rect x="112" y="148" width="288" height="216" rx="28" ry="28" fill="#ffffff"/>
+  <path d="M214 200 L214 312 L322 256 Z" fill="#4f46e5"/>
+</svg>

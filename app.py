@@ -45,7 +45,10 @@ from services.hybrid_session import HybridSessionInterface  # noqa: E402
 from services.session_state import auth_timestamp, is_auth_fresh  # noqa: E402
 from services.user_identity import USER_KEY_VERSION as _USER_KEY_VERSION  # noqa: E402
 
-_NO_RESTORE_PATHS = {"/login", "/auth/google", "/auth/callback", "/logout", "/logout-all"}
+_NO_RESTORE_PATHS = {
+    "/login", "/auth/google", "/auth/callback", "/logout", "/logout-all",
+    "/privacy", "/terms", "/manifest.webmanifest", "/favicon.ico",
+}
 
 # secret_key: 운영 환경에서 미설정 시 즉시 실패
 _secret_key = os.environ.get("FLASK_SECRET_KEY")
@@ -285,12 +288,14 @@ from routes.sheet import sheet_bp
 from routes.main import main_bp
 from routes.item import item_bp
 from routes.settings import settings_bp
+from routes.site import site_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(sheet_bp)
 app.register_blueprint(main_bp)
 app.register_blueprint(item_bp)
 app.register_blueprint(settings_bp)
+app.register_blueprint(site_bp)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8090, debug=IS_DEV)

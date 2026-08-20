@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  {% include 'partials/head_meta.html' %}
   <title>데이터 가져오기 — My Favorite Watch</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body class="connect-page">
+{% include 'partials/boot_loading.html' %}
   <div class="connect-container">
     <div class="connect-header">
       <a href="{{ url_for('settings.settings') }}" class="back-btn">← 설정</a>
@@ -34,30 +34,54 @@
       <button type="submit" class="btn btn-secondary btn-full">워크시트 목록 불러오기</button>
     </form>
 
-    <!-- 2단계: 워크시트 선택 -->
+    <!-- 2단계: 워크시트 선택 → 영향 범위 확인 -->
     {% if worksheets %}
     <div class="settings-section" style="margin-top:16px;">
       <h2 class="section-title">워크시트 선택</h2>
       <form method="post" action="{{ url_for('sheet.import_sheet') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="action" value="import">
+        <input type="hidden" name="action" value="analyze">
         <input type="hidden" name="src_sheet_id" value="{{ src_sheet_id }}">
         <div class="form-group">
           <label class="form-label">가져올 워크시트</label>
           <select name="src_worksheet" class="form-input" required>
             {% for ws in worksheets %}
-            <option value="{{ ws }}">{{ ws }}</option>
+            <option value="{{ ws }}" {% if selected_worksheet == ws %}selected{% endif %}>{{ ws }}</option>
             {% endfor %}
           </select>
         </div>
-        <p class="form-hint">선택한 워크시트의 데이터가 현재 시트에 추가됩니다. 중복 항목은 그대로 추가됩니다.</p>
-        <button type="submit" class="btn btn-primary btn-full"
-          onclick="return confirm('데이터를 가져오시겠습니까? 기존 데이터는 유지됩니다.')">
-          가져오기
-        </button>
+        <p class="form-hint">선택한 워크시트를 읽어 실제로 추가될 건수와 중복 건수를 먼저 계산합니다. 이 단계에서는 시트가 변경되지 않습니다.</p>
+        <button type="submit" class="btn btn-secondary btn-full">가져올 항목 확인</button>
       </form>
     </div>
     {% endif %}
+
+    <!-- 3단계: 영향 범위 확인 후 실행 (P2-4) -->
+    {% if plan %}
+    <div class="settings-section" style="margin-top:16px;">
+      <h2 class="section-title">가져오기 전 확인</h2>
+      {% with plan=plan, source_label="워크시트 '" ~ selected_worksheet ~ "'" %}
+        {% include 'partials/import_plan.html' %}
+      {% endwith %}
+
+      {% if plan.to_add > 0 %}
+      <form method="post" action="{{ url_for('sheet.import_sheet') }}"
+            data-confirm-title="데이터 가져오기"
+            data-confirm="{{ plan.to_add }}건을 현재 시트에 추가합니다.{% if plan.duplicates %} 중복 {{ plan.duplicates }}건은 건너뜁니다.{% endif %} 기존 데이터는 유지됩니다."
+            data-confirm-label="{{ plan.to_add }}건 가져오기">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="import">
+        <input type="hidden" name="src_sheet_id" value="{{ src_sheet_id }}">
+        <input type="hidden" name="src_worksheet" value="{{ selected_worksheet }}">
+        <button type="submit" class="btn btn-primary btn-full">{{ plan.to_add }}건 가져오기</button>
+      </form>
+      {% else %}
+      <p class="form-hint">추가할 새 항목이 없습니다. 다른 워크시트를 선택해주세요.</p>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
+
+  <script src="{{ url_for('static', filename='js/confirm-modal.js') }}"></script>
 </body>
 </html>

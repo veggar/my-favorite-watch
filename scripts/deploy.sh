@@ -66,6 +66,23 @@ PUBLIC_BASE_URL="${PUBLIC_BASE_URL%/}"
 # 배포용 REDIRECT_URI (로컬 .env의 localhost 값을 공개 주소로 대체)
 DEPLOY_REDIRECT_URI="${PUBLIC_BASE_URL}/auth/callback"
 
+# 개인정보처리방침 · 이용약관 운영 주체 정보 (P0-4)
+# 미설정 상태로 배포하면 /privacy, /terms 화면에 "설정 필요" 경고가 노출되고
+# Google OAuth 앱 검증(P0-2) 제출 요건도 충족하지 못한다. 배포를 막지는 않고 경고만 한다.
+DEPLOY_SERVICE_URL="${SERVICE_URL:-$PUBLIC_BASE_URL}"
+POLICY_VARS=(SERVICE_OPERATOR PRIVACY_CONTACT_EMAIL POLICY_EFFECTIVE_DATE)
+MISSING_POLICY=()
+for var in "${POLICY_VARS[@]}"; do
+  if [ -z "${!var}" ]; then
+    MISSING_POLICY+=("$var")
+  fi
+done
+if [ ${#MISSING_POLICY[@]} -gt 0 ]; then
+  echo "⚠️  방침·약관 운영 주체 정보 미설정: ${MISSING_POLICY[*]}"
+  echo "   /privacy, /terms 화면에 '설정 필요' 경고가 표시됩니다. .env 를 확인하세요."
+  echo ""
+fi
+
 echo "🚀 Cloud Run 배포 시작"
 echo "   프로젝트: $PROJECT"
 echo "   리전:     $REGION"
@@ -84,7 +101,7 @@ gcloud run deploy "$SERVICE" \
   --region "$REGION" \
   --project "$PROJECT" \
   --allow-unauthenticated \
-  --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET},FLASK_SECRET_KEY=${FLASK_SECRET_KEY},TMDB_API_KEY=${TMDB_API_KEY},REDIRECT_URI=${DEPLOY_REDIRECT_URI},APP_ENV=production" \
+  --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET},FLASK_SECRET_KEY=${FLASK_SECRET_KEY},TMDB_API_KEY=${TMDB_API_KEY},REDIRECT_URI=${DEPLOY_REDIRECT_URI},APP_ENV=production,SERVICE_OPERATOR=${SERVICE_OPERATOR},PRIVACY_CONTACT_EMAIL=${PRIVACY_CONTACT_EMAIL},SERVICE_URL=${DEPLOY_SERVICE_URL},POLICY_EFFECTIVE_DATE=${POLICY_EFFECTIVE_DATE}" \
   --set-secrets "USER_KEY_HMAC_SECRET=${USER_KEY_SECRET_NAME}:latest"
 
 echo ""

@@ -1,0 +1,22 @@
+{#
+  초기 로딩 표시 (P2-2 / ui-ux-standards §1).
+  <body> 바로 다음에 include 한다. 스타일은 partials/head_meta.html 에 인라인으로 있다.
+#}
+<div id="boot-loading" role="status" aria-live="polite">
+  <span class="boot-text">Now Loading<span class="boot-dots" aria-hidden="true"><i></i><i></i><i></i></span></span>
+</div>
+<script>
+  // 스타일시트·스크립트가 모두 도착하면 표시를 걷는다.
+  (function () {
+    var done = false;
+    function ready() {
+      if (done) return;
+      done = true;
+      document.body.classList.add("app-ready");
+    }
+    if (document.readyState === "complete") ready();
+    else window.addEventListener("load", ready);
+    // 리소스 하나가 오래 걸려도 화면이 영구히 가려지지 않도록 상한을 둔다.
+    setTimeout(ready, 8000);
+  })();
+</script>

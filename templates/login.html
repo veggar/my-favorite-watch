@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  {% include 'partials/head_meta.html' %}
   <title>My Favorite Watch</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body class="login-page">
+{% include 'partials/boot_loading.html' %}
   <div class="login-container">
     <div class="login-logo">
       <span class="logo-icon">🎬</span>
@@ -28,6 +28,11 @@
       </svg>
       Google로 로그인
     </a>
+
+    <p class="login-consent">
+      로그인하면 <a href="{{ url_for('site.terms') }}">이용약관</a> 및
+      <a href="{{ url_for('site.privacy') }}">개인정보처리방침</a>에 동의하는 것으로 간주됩니다.
+    </p>
   </div>
 </body>
 </html>

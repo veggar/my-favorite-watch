@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="My Favorite Watch">
+  <title>My Favorite Watch</title>
+  <defs>
+    <linearGradient id="mfw-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#3730a3"/>
+    </linearGradient>
+  </defs>
+  <!-- 배경: 앱 아이콘용 라운드 스퀘어 -->
+  <rect x="0" y="0" width="512" height="512" rx="112" ry="112" fill="url(#mfw-bg)"/>
+  <!-- 필름 프레임 -->
+  <rect x="112" y="148" width="288" height="216" rx="28" ry="28" fill="#ffffff"/>
+  <!-- 좌우 퍼포레이션 -->
+  <g fill="#4f46e5">
+    <rect x="126" y="168" width="26" height="22" rx="6" ry="6"/>
+    <rect x="126" y="212" width="26" height="22" rx="6" ry="6"/>
+    <rect x="126" y="256" width="26" height="22" rx="6" ry="6"/>
+    <rect x="126" y="300" width="26" height="22" rx="6" ry="6"/>
+    <rect x="360" y="168" width="26" height="22" rx="6" ry="6"/>
+    <rect x="360" y="212" width="26" height="22" rx="6" ry="6"/>
+    <rect x="360" y="256" width="26" height="22" rx="6" ry="6"/>
+    <rect x="360" y="300" width="26" height="22" rx="6" ry="6"/>
+  </g>
+  <!-- 재생 삼각형 -->
+  <path d="M232 214 L232 298 L306 256 Z" fill="#4f46e5"/>
+</svg>

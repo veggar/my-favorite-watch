@@ -111,6 +111,29 @@ def verify_sheet_access(credentials, sheet_id: str) -> dict:
     }
 
 
+def read_source_items(credentials, src_sheet_id: str, src_worksheet: str) -> list[dict]:
+    """다른 시트의 원본 데이터를 dict 목록으로 읽기 전용 조회 (P2-4 analyze 단계).
+
+    `import_from_sheet` 이 실제로 가져올 때 읽는 방식과 동일하게 헤더 행을
+    기준으로 파싱하지만, 시트를 변경하지 않는다.
+    """
+    service = _sheets_service(credentials)
+    result = service.spreadsheets().values().get(
+        spreadsheetId=src_sheet_id,
+        range=f"'{src_worksheet}'",
+    ).execute()
+    rows = result.get("values", [])
+    if len(rows) < 2:
+        return []
+
+    header = rows[0]
+    items = []
+    for row in rows[1:]:
+        padded = row + [""] * (len(header) - len(row))
+        items.append(dict(zip(header, padded)))
+    return items
+
+
 def import_from_sheet(credentials, src_sheet_id: str, src_worksheet: str,
                       dst_sheet_id: str, dst_worksheet: str,
                       existing_title_map: dict | None = None) -> int:
