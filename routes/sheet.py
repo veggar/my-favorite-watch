@@ -25,6 +25,7 @@ from services.tmdb import enrich_item, enrich_items_batch
 from services.tmdb_tracker import mark_pending
 from services.firestore_session import update_sheet_from_session
 from services.import_plan import plan_import
+from services import csv_import_staging
 
 logger = logging.getLogger(__name__)
 
@@ -321,7 +322,11 @@ def upload_csv():
                     else:
                         summary = summarize(items)
                         preview = items
-                        session["csv_import_data"] = items
+                        # 파싱 결과는 후기·줄거리 등 개인정보를 포함할 수 있으므로
+                        # 서명만 되고 암호화되지 않는 쿠키에 직접 담지 않는다.
+                        # 서버 측 단기 저장소에 두고, 쿠키에는 조회용 staging id만
+                        # 남긴다 (PRD §16.1).
+                        session["csv_staging_id"] = csv_import_staging.save(items)
                         # 제출 전에 실제 추가·중복 건수를 계산해 보여준다 (P2-4).
                         if session.get("sheet_id"):
                             plan = plan_import(
@@ -339,7 +344,8 @@ def upload_csv():
                              "CSV 또는 Excel(.xlsx) 형식과 열 구성을 확인해주세요.")
 
         elif action == "import":
-            items = session.pop("csv_import_data", None)
+            staging_id = session.pop("csv_staging_id", None)
+            items = csv_import_staging.load_and_clear(staging_id) if staging_id else None
             if not items:
                 error = "가져올 데이터가 없습니다. 다시 파일을 업로드해주세요."
             elif not session.get("sheet_id"):

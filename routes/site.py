@@ -9,8 +9,12 @@
 
 import logging
 
-from flask import Blueprint, current_app, jsonify, render_template, send_from_directory, url_for
+from flask import (
+    Blueprint, Response, abort, current_app, jsonify, render_template,
+    send_from_directory, url_for,
+)
 
+from services import policy_history
 from services.site_info import policy_context
 
 logger = logging.getLogger(__name__)
@@ -26,13 +30,37 @@ def privacy():
             "개인정보처리방침 운영자 정보 미설정: %s",
             ", ".join(m["env"] for m in ctx["missing"]),
         )
-    return render_template("privacy.html", policy=ctx)
+    versions = policy_history.list_versions("privacy")
+    return render_template("privacy.html", policy=ctx, history_versions=versions)
 
 
 @site_bp.route("/terms")
 def terms():
     ctx = policy_context()
-    return render_template("terms.html", policy=ctx)
+    versions = policy_history.list_versions("terms")
+    return render_template("terms.html", policy=ctx, history_versions=versions)
+
+
+@site_bp.route("/<any(privacy, terms):doc_type>/history")
+def policy_history_list(doc_type):
+    """이전 버전 목록 (PRD §5.1 "이전 버전 보관"). 콘텐츠 변경 전 스냅샷이
+    없으면 빈 목록을 그대로 보여준다 — 최초 버전에는 이전 버전이 없는 것이
+    정상이다."""
+    versions = policy_history.list_versions(doc_type)
+    title = "개인정보처리방침" if doc_type == "privacy" else "이용약관"
+    return render_template(
+        "legal_history_list.html",
+        doc_type=doc_type, title=title, versions=versions,
+    )
+
+
+@site_bp.route("/<any(privacy, terms):doc_type>/history/<slug>")
+def policy_history_view(doc_type, slug):
+    """특정 시행일의 스냅샷 원문을 그대로 서빙한다."""
+    html = policy_history.read_version(doc_type, slug)
+    if html is None:
+        abort(404)
+    return Response(html, mimetype="text/html")
 
 
 @site_bp.route("/favicon.ico")

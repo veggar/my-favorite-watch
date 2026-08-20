@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  {% include 'partials/head_meta.html' %}
+  <title>{{ title }} 이전 버전 — My Favorite Watch</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="settings-page">
+{% include 'partials/boot_loading.html' %}
+
+  <header class="app-header">
+    <div class="header-left">
+      <a href="{{ url_for('site.' ~ doc_type) }}" class="back-btn">← {{ title }}</a>
+    </div>
+    <div class="header-right">
+      <span class="app-name">이전 버전</span>
+    </div>
+  </header>
+
+  <main class="doc-container">
+    <h1 class="doc-title">{{ title }} 이전 버전</h1>
+
+    <section class="doc-section">
+      {% if versions %}
+      <ul class="doc-list">
+        {% for v in versions %}
+        <li><a href="{{ url_for('site.policy_history_view', doc_type=doc_type, slug=v) }}">{{ v }} 시행 버전</a></li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p>아직 보관된 이전 버전이 없습니다. 현재 버전이 최초 버전입니다.</p>
+      {% endif %}
+    </section>
+
+    <nav class="doc-footer">
+      <a href="{{ url_for('site.' ~ doc_type) }}">현재 {{ title }}으로 돌아가기</a>
+    </nav>
+  </main>
+</body>
+</html>

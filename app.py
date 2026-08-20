@@ -164,7 +164,13 @@ def auto_restore_session():
     """
     if session.get("credentials") and session.get("user_key"):
         return
-    if request.path in _NO_RESTORE_PATHS or request.path.startswith("/static/"):
+    if (
+        request.path in _NO_RESTORE_PATHS
+        or request.path.startswith("/static/")
+        # /privacy/history/<slug>, /terms/history 등 동적 하위 경로 포함
+        or request.path.startswith("/privacy/")
+        or request.path.startswith("/terms/")
+    ):
         return
     if _get_fs_db() is None:
         return

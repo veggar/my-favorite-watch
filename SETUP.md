@@ -55,6 +55,13 @@ pip install -r requirements-dev.txt      # 실행 + 테스트(pytest)
    `POLICY_EFFECTIVE_DATE`를 채우고, `docs/legal/privacy-policy-draft.md` ·
    `docs/legal/terms-of-service-draft.md`의 "배포 전 필수 확인" 체크리스트와
    법률 전문가 검토를 마친 뒤 제출한다.
+5. 이후 방침·약관 **콘텐츠를 수정하기 전에는 반드시** 아래 명령으로 현재
+   라이브 버전을 스냅샷으로 얼려 둔다. 그래야 "이전 버전을 함께 제공"하는
+   요건을 지킬 수 있다(자동화되어 있지 않으므로 잊으면 이전 버전이 유실된다).
+
+   ```bash
+   python3 scripts/archive_policy_snapshot.py both
+   ```
 
 ### 3.2 클라이언트 ID
 
@@ -182,6 +189,7 @@ gcloud secrets add-iam-policy-binding user-key-hmac-secret \
 | `device_sessions` | `device_id` | `user_key`, `refresh_token`, `expires_at`(90일) |
 | `tmdb_jobs` | `item_id` | TMDb 보강 진행 상태(`status`), `expires_at` |
 | `server_sessions` | `sha256(session_id)` | 서버 측 세션(`credentials` · `user_key` · `user` · 시트 캐시 · `auth_at`), `expires_at`(90일) |
+| `csv_import_staging` | `sha256(staging_id)` | CSV/Excel 가져오기 미리보기 파싱 결과(`items`), `expires_at`(30분). 등록 완료 시 즉시 삭제 |
 | `sessions` (레거시) | `device_id` | 이전 스키마. 전환 기간 동안 읽기 전용으로만 사용한다 |
 
 모든 컬렉션은 앱이 자동 생성하므로 미리 만들 필요는 없다.
@@ -469,6 +477,31 @@ gcloud firestore indexes fields update expires_at \
 > 만들 수 없다. 전체 로그아웃(`/logout-all`)은 `user_key` 동일 문서를 즉시
 > 삭제하므로 TTL과 무관하게 동작한다.
 
+### 10.3.2 `csv_import_staging` TTL 정책 (필수)
+
+CSV/Excel 가져오기 미리보기 파싱 결과(후기·줄거리 등 개인정보 포함 가능)를
+담는 문서다. 등록을 완료하면 `services/csv_import_staging.py`가 즉시
+삭제하지만, 미리보기 후 등록하지 않고 이탈한 문서는 TTL로 정리해야 한다.
+앱이 `expires_at`(저장 + 30분)을 기록하므로 오프셋 없이 TTL만 켠다.
+
+```bash
+gcloud firestore fields ttls update expires_at \
+  --collection-group=csv_import_staging \
+  --database=refresh-token \
+  --project=my-favorite-watch \
+  --enable-ttl
+
+gcloud firestore indexes fields update expires_at \
+  --collection-group=csv_import_staging \
+  --database=refresh-token \
+  --project=my-favorite-watch \
+  --disable-indexes
+```
+
+> 문서 키는 staging id의 sha256 해시다(원본은 세션 쿠키에만 있음). TTL
+> 활성화까지 최소 10분이 걸리므로, 그 사이 미완료 가져오기가 있어도 최대
+> 30분(TTL) + 활성화 지연만큼만 노출 창이 늘어난다.
+
 ### 10.4 레거시 `sessions` 컬렉션 정리 (전환 기간)
 
 레거시 문서는 재로그인·자동 복원 시 신규 구조로 옮겨지며 원문 개인정보가
@@ -530,6 +563,9 @@ gcloud firestore fields ttls update updated_at \
 - [ ] 세션 쿠키를 디코드했을 때 `credentials` · `user_key` · `user` 없이 `_sid`만 있는지 (서버 측 세션, task-2026-08-003)
 - [ ] 로그인 후 Firestore `server_sessions`에 문서가 생기고, 로그아웃 시 삭제되는지
 - [ ] `server_sessions` TTL 정책이 `ACTIVE`인지 (10.3.1)
+- [ ] `device_sessions` TTL 정책이 `ACTIVE`인지 (10.3, 2026-08-21 적용 완료)
+- [ ] `csv_import_staging` TTL 정책이 `ACTIVE`인지 (10.3.2)
+- [ ] CSV/Excel 업로드 미리보기 직후 세션 쿠키를 디코드했을 때 `csv_import_data`(구 키)가 아니라 `csv_staging_id`만 있고, 파싱한 후기·줄거리 원문이 쿠키 어디에도 없는지
 
 ---
 
