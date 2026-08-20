@@ -183,8 +183,9 @@
 - 90일 이상 미사용 시에만 재로그인이 필요하다.
 - 운영 쿠키의 인증 핸들은 예측 불가능한 세션 식별자이며, 사용자 표시 정보와
   OAuth 토큰은 서버 측에 둔다. `HttpOnly`·`Secure`·`SameSite=Lax`와 Firestore
-  문서 ID 해시로 탈취·열람 위험을 줄인다. 단, 일시적 `csv_import_data`는
-  현재 쿠키에 남으므로 16.1의 후속 개선이 필요하다.
+  문서 ID 해시로 탈취·열람 위험을 줄인다. CSV·Excel 가져오기 파싱 결과도
+  `services/csv_import_staging.py`를 통해 Firestore(또는 로컬 폴백 시 프로세스
+  메모리)에 두고, 쿠키에는 `csv_staging_id`만 남긴다(2026-08-20 개선 완료).
 - Firestore가 구성된 운영 환경에서 전체 로그아웃은 모든 서버 세션 문서를
   삭제하므로 다른 기기의 남은 쿠키도 다음 요청부터 사용할 수 없다. Firestore
   미구성 로컬 폴백에서는 전체 세션 값이 서명 쿠키에 저장되므로 이 즉시 무효화
@@ -254,10 +255,15 @@
   미설정 시 화면에 "[운영 주체 미설정]" 등 자리표시자와 경고 배너가 노출되고,
   설정 화면과 `scripts/deploy.sh` 배포 전 출력에도 경고가 표시된다.
 - 위 4개 환경 변수를 채우는 것과 별개로, 두 초안 문서의 "배포 전 필수 확인"
-  체크리스트(수탁자 법인명, 국외 이전 국가, 만 14세 미만 정책, 법률 전문가
-  최종 검토 등)가 남아 있는 동안에는 실제 서비스로 공개하지 않는다.
-- 개인정보처리방침 변경 시 시행일과 이전 버전을 함께 제공하는 기능은 아직
-  없다(향후 개선 대상).
+  체크리스트(운영 주체 소재지, 준거법 공식 확정, 수탁자 정확한 법인명, 국외
+  이전 국가, 법률 전문가 최종 검토 등)가 남아 있는 동안에는 실제 서비스로
+  공개하지 않는다.
+- 개인정보처리방침·이용약관 변경 시 시행일과 이전 버전을 함께 제공한다.
+  `services/policy_history.py`가 `docs/legal/history/{privacy,terms}/{시행일}.html`에
+  스냅샷을 보관하고, `/privacy/history`·`/terms/history`에서 열람할 수 있다.
+  콘텐츠를 바꾸기 **전에** `python3 scripts/archive_policy_snapshot.py
+  {privacy|terms|both}`로 현재 라이브 화면을 얼려 저장한 뒤 수정한다(수동
+  절차 — 자동화되어 있지 않으므로 잊으면 이전 버전이 유실된다).
 - 코드·템플릿은 완료됐지만 콘텐츠 확정이 남아 있으므로 P0-4는 **부분 완료**로
   관리한다.
 
@@ -591,12 +597,12 @@
 | `oauth_state`, `code_verifier` | OAuth 요청 검증용 임시 값 |
 | `_csrf_token` | CSRF 검증 값 |
 | `default_sort`, `import_success`, `tmdb_pending_ids` 등 | UI 설정과 일시적 진행 상태 |
-| `csv_import_data` | CSV·Excel 미리보기와 등록 사이의 임시 파싱 결과. 현재 서명 쿠키에 저장되므로 암호화되지 않으며 서버 측 임시 저장으로 이전할 개선 대상 |
+| `csv_staging_id` | CSV·Excel 미리보기와 등록 사이를 잇는 조회용 식별자. 파싱 결과 원문은 `csv_import_staging` Firestore 컬렉션(문서 키는 이 식별자의 sha256 해시, 로컬 폴백 시 프로세스 메모리)에 30분 TTL로 두고 등록 시점에 1회 소비 후 즉시 삭제한다 |
 
 쿠키는 서명되지만 암호화되지 않는다. 따라서 access/refresh token,
-`user_key`, 사용자 표시 정보, 시트 연결 캐시는 운영 쿠키에 저장하지 않는다.
-가져오기 파싱 결과는 현재 예외적으로 쿠키에 임시 저장되며, 파일 내용에 후기 등
-개인정보가 포함될 수 있으므로 서버 측 단기 저장과 명시적 만료 처리가 후속으로 필요하다.
+`user_key`, 사용자 표시 정보, 시트 연결 캐시, 가져오기 파싱 결과 원문은
+운영 쿠키에 저장하지 않는다(2026-08-20 `csv_import_data` → `csv_staging_id`
+전환으로 마지막 예외 항목 해소).
 
 ### 16.2 Firestore 영구·서버 상태
 
@@ -645,9 +651,9 @@
 - 운영 환경에서 `FLASK_SECRET_KEY` 미설정 시 앱 시작 실패
 - POST/PUT/PATCH/DELETE 요청 CSRF 토큰 검증
 - 세션 쿠키: HttpOnly, SameSite=Lax, 운영 환경 Secure
-- 운영 쿠키에는 access/refresh token, 사용자 표시 정보와 시트 캐시를 두지
-  않는다. 단, 현재 `csv_import_data`는 서명 쿠키에 임시 저장되므로 서버 측
-  단기 저장으로 이전해야 한다
+- 운영 쿠키에는 access/refresh token, 사용자 표시 정보, 시트 캐시, 가져오기
+  파싱 결과 원문을 두지 않는다. CSV/Excel 파싱 결과는 `services/csv_import_staging.py`가
+  서버 측(Firestore, 로컬 폴백 시 프로세스 메모리)에 30분 TTL로 보관한다
 - 예외 원문을 화면에 노출하지 않는다. 사용자에게는 `services/errors.py`의 정제된 안내 문구만 보여주고, 원본 예외와 스택은 서버 로그에만 기록한다
 - 개발 환경에서만 `OAUTHLIB_INSECURE_TRANSPORT=1` (HTTP 허용), `OAUTHLIB_RELAX_TOKEN_SCOPE=1`
 
@@ -697,6 +703,7 @@ routes/
   item.py                   # 등록/수정/삭제/AJAX 엔드포인트
   sheet.py                  # 시트 연결/가져오기/CSV 업로드
   settings.py               # 설정 화면
+  site.py                   # /privacy, /terms, /manifest.webmanifest, /favicon.ico
 services/
   google_sheets.py          # Sheets API 래퍼 (CRUD, 배치 저장, 삭제 이관)
   google_credentials.py     # OAuth 자격증명 최소 직렬화·복원
@@ -709,13 +716,23 @@ services/
   tmdb.py                   # TMDb 검색, 요청 단위 청크 보강
   tmdb_tracker.py           # Firestore 기반 TMDb 진행 상태 추적
   csv_import.py             # CSV/Excel 파싱, 날짜·평점 변환
+  csv_import_staging.py     # 가져오기 파싱 결과 서버 측 단기 저장 (P0-4 부속)
+  import_plan.py            # 가져오기 전 추가·중복 건수 계산 (P2-4)
+  site_info.py              # 방침·약관 운영 주체 정보 (환경 변수 주입, P0-4)
+  policy_history.py         # 방침·약관 이전 버전 스냅샷 저장·조회 (P0-4 부속)
 templates/
   login.html                # 로그인
   list.html                 # 목록 메인
   partials/item_form.html   # 등록/수정 공통 폼
+  partials/head_meta.html   # PWA·초기 로딩 공통 <head> (P2-1, P2-2)
+  partials/boot_loading.html # "Now Loading" 표시 (P2-2)
+  partials/import_plan.html # 가져오기 영향 범위 표시 (P2-4)
   connect.html              # 시트 연결
   import_sheet.html         # 시트 가져오기
   upload_csv.html           # CSV 가져오기
+  privacy.html              # 개인정보처리방침 (P0-4)
+  terms.html                # 이용약관 (P0-4)
+  legal_history_list.html   # 방침·약관 이전 버전 목록 (P0-4 부속)
   settings.html             # 설정
 docs/legal/
   privacy-policy-draft.md   # 개인정보처리방침 콘텐츠 초안
@@ -723,8 +740,13 @@ docs/legal/
 static/
   css/style.css
   js/main.js
+  js/confirm-modal.js       # 앱 스타일 확인 모달 (P2-3)
+  icons/, favicon.ico        # PWA 아이콘 (P2-1)
+scripts/
+  deploy.sh                 # Cloud Run 배포 스크립트
+  generate_icons.py         # PWA 아이콘 PNG 재생성 (수동 실행 도구)
+  archive_policy_snapshot.py # 방침·약관 콘텐츠 변경 전 이전 버전 스냅샷 저장 (수동 실행 도구)
 Dockerfile                  # Cloud Run 컨테이너 이미지
-scripts/deploy.sh           # Cloud Run 배포 스크립트
 version.py                  # 앱 버전
 ```
 

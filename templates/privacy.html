@@ -95,7 +95,7 @@
               <td>파일 가져오기</td>
               <td>이용자가 업로드한 CSV·Excel 내용과 파싱 결과</td>
               <td>미리보기와 Google Sheet 일괄 등록</td>
-              <td>미리보기 후 등록 완료 시까지</td>
+              <td>서버 측 단기 저장소에 최대 30분 보관하며, 등록 완료 시 즉시 삭제</td>
             </tr>
             <tr>
               <td>TMDb 보강 상태</td>
@@ -282,6 +282,10 @@
       <a href="{{ url_for('site.terms') }}">이용약관</a>
       <span aria-hidden="true">·</span>
       <a href="{{ url_for('auth.login') }}">로그인</a>
+      {% if history_versions %}
+      <span aria-hidden="true">·</span>
+      <a href="{{ url_for('site.policy_history_list', doc_type='privacy') }}">이전 버전</a>
+      {% endif %}
     </nav>
   </main>
 </body>
