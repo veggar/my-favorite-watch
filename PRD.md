@@ -32,7 +32,8 @@
 - 삭제 (삭제 워크시트 이관)
 - 삭제된 항목 조회 및 복구
 - 설정 관리 (문서명 · 워크시트명 변경, 기본 정렬 저장)
-- Firestore 기반 refresh_token 영구 세션 복원
+- Firestore 기반 서버 세션 및 refresh_token 자동 세션 복원
+- 개인정보처리방침·이용약관 콘텐츠 초안 관리
 - Cloud Run 배포 구성
 
 ### 2.2 제외 범위
@@ -130,8 +131,8 @@
 
 | 계층 | 값 | 담당 | 강제 방식 |
 |----|----|----|----|
-| 기기 계층 | 90일 | `device_id`·`user_key`·시트 캐시 | `__session` 쿠키 수명 (요청마다 슬라이딩 갱신) |
-| 인증 계층 | 12시간 (`AUTH_FRESHNESS_HOURS`, 기본값은 기존 `SESSION_LIFETIME_HOURS` 재사용) | access token·표시 정보 | 세션의 `auth_at`을 요청마다 검사해 초과 시 `credentials` 제거 |
+| 기기 계층 | 90일 | 쿠키의 `_sid`·`device_id`, Firestore의 기기·서버 세션 | `__session` 쿠키와 Firestore 문서의 `expires_at`을 요청마다 슬라이딩 갱신 |
+| 인증 계층 | 12시간 (`AUTH_FRESHNESS_HOURS`, 기본값은 기존 `SESSION_LIFETIME_HOURS` 재사용) | 서버 세션의 access token·표시 정보 | `auth_at`을 요청마다 검사해 초과 시 `credentials`·`user` 제거 |
 
 - 인증 계층이 만료되면 같은 요청에서 `device_id` → Firestore `refresh_token`으로
   access token을 재발급하고 `auth_at`을 갱신한다. 사용자에게 재로그인은 발생하지 않는다.
@@ -140,19 +141,28 @@
 
 #### 저장 위치
 
-- Flask 세션에 현재 요청 처리에 필요한 사용자 키·기기 식별자·시트·OAuth 상태 저장
-- Firestore `refresh-token` 데이터베이스를 **두 컬렉션으로 분리**한다.
+- Flask 라우트는 동일한 `session` API를 사용하지만, 운영 환경에서는
+  `HybridSessionInterface`가 저장 위치를 분리한다.
+  - 서명된 `__session` 쿠키: 예측 불가능한 세션 식별자 `_sid`, `device_id`,
+    OAuth state·PKCE verifier, CSRF 값과 일시적 UI·가져오기 상태
+  - Firestore `server_sessions`: access token, `user_key`, 표시용 사용자 정보,
+    시트 연결 캐시, `auth_at`
+- Firestore `refresh-token` 데이터베이스는 다음 컬렉션을 사용한다.
 
   | 컬렉션 | 문서 ID | 내용 |
   |----|----|----|
   | `users` | `user_key` | 시트 연결 설정(사용자당 1개) |
   | `device_sessions` | `device_id` | `user_key`, `refresh_token`, `expires_at`(90일) |
+  | `server_sessions` | `sha256(session_id)` | access token·사용자 키·표시 정보·시트 캐시·`auth_at`, `expires_at`(90일) |
+  | `tmdb_jobs` | `item_id` | TMDb 보강 상태, `expires_at` |
 
 - 같은 계정은 모든 기기에서 같은 `user_key`를 쓰므로 시트 설정이 공유되고,
   refresh token은 기기별로 분리된다.
 - 자동 복원 조회 순서: `device_sessions/{device_id}` → `users/{user_key}`
-- 기기 로그아웃(`/logout`)은 해당 기기 문서만 삭제한다. 전체
-  로그아웃(`/logout-all`)은 같은 `user_key`의 모든 기기 문서를 삭제한다.
+- 기기 로그아웃(`/logout`)은 해당 기기의 `device_sessions`와 현재
+  `server_sessions` 문서를 삭제한다. 전체 로그아웃(`/logout-all`)은 같은
+  `user_key`의 모든 기기·서버 세션 문서를 삭제해 다음 요청부터 즉시
+  재인증을 요구한다.
 - 같은 브라우저에서 계정을 전환하면 `user_key`가 달라지므로 이전 계정의
   시트가 노출되지 않는다. 기기 문서의 `user_key`가 바뀌면 이전 계정의
   refresh token을 먼저 제거한다.
@@ -171,10 +181,14 @@
 - 쿠키 만료 시각은 요청마다 연장된다(`SESSION_REFRESH_EACH_REQUEST`). 따라서 90일은
   **마지막 사용 시점 기준**이며, 계속 사용하는 사용자는 재로그인 없이 유지된다.
 - 90일 이상 미사용 시에만 재로그인이 필요하다.
-- 쿠키를 탈취당하면 기기 계층까지 함께 노출된다. `HttpOnly`·`Secure`·`SameSite=Lax`로
-  방어하며, 근본 완화는 서버 측 세션 전환(향후 과제)이다.
-- 전체 로그아웃은 다른 기기의 쿠키를 즉시 폐기하지 못한다. 해당 기기의 access token이
-  만료되고 재발급이 실패하는 시점(최대 access token 수명)까지 지연된다.
+- 운영 쿠키의 인증 핸들은 예측 불가능한 세션 식별자이며, 사용자 표시 정보와
+  OAuth 토큰은 서버 측에 둔다. `HttpOnly`·`Secure`·`SameSite=Lax`와 Firestore
+  문서 ID 해시로 탈취·열람 위험을 줄인다. 단, 일시적 `csv_import_data`는
+  현재 쿠키에 남으므로 16.1의 후속 개선이 필요하다.
+- Firestore가 구성된 운영 환경에서 전체 로그아웃은 모든 서버 세션 문서를
+  삭제하므로 다른 기기의 남은 쿠키도 다음 요청부터 사용할 수 없다. Firestore
+  미구성 로컬 폴백에서는 전체 세션 값이 서명 쿠키에 저장되므로 이 즉시 무효화
+  보장이 적용되지 않는다.
 - 전제: OAuth 동의 화면이 프로덕션으로 게시되어 있어야 한다. 테스트 모드에서는 Google이 refresh token을 7일 후 만료시키므로 위 90일 기준이 성립하지 않는다.
 - 도메인이 바뀌면 이전 도메인의 쿠키는 전달되지 않는다. 기기별 1회 재로그인을
   정상 동작으로 정의하며, 쿠키 복사나 `SESSION_COOKIE_DOMAIN` 공유는 하지 않는다.
@@ -222,8 +236,20 @@
 | CSV 가져오기 | `/upload-csv` |
 | 목록 (메인 / 삭제된 항목 탭) | `/` |
 | 설정 | `/settings` |
+| 개인정보처리방침 | `/privacy` (콘텐츠 초안 완료, 라우트·템플릿 미구현) |
+| 이용약관 | `/terms` (콘텐츠 초안 완료, 라우트·템플릿 미구현) |
 
 등록 및 수정은 목록 화면 내 슬라이드 업 모달로 처리한다.
+
+### 5.1 법률 문서 공개 요건
+
+- 개인정보처리방침 콘텐츠 초안: `docs/legal/privacy-policy-draft.md`
+- 이용약관 콘텐츠 초안: `docs/legal/terms-of-service-draft.md`
+- 초안의 `[운영자 입력 필요]` 항목을 확정하고 법률 검토를 마친 뒤
+  `/privacy`, `/terms` 라우트와 Jinja 템플릿으로 공개한다.
+- 로그인 화면에서 두 페이지를 로그인 없이 열 수 있어야 한다.
+- 개인정보처리방침 변경 시 시행일과 이전 버전을 함께 제공한다.
+- 현재는 콘텐츠 초안만 완료됐으므로 P0-4는 **부분 완료**로 관리한다.
 
 ---
 
@@ -271,7 +297,8 @@
 ### 6.5 가져오기 알림 배너
 
 - CSV / 시트 가져오기 완료 후 목록 상단에 성공 메시지 배너 표시
-- TMDb 비동기 검색 진행 중이면 진행률 `N% (M/total)` 실시간 업데이트
+- 브라우저가 요청 단위 TMDb 청크 보강을 진행하는 동안 진행률
+  `N% (M/total)` 실시간 업데이트
 
 ---
 
@@ -337,15 +364,18 @@
 | 시점 | 방식 |
 |------|------|
 | 신규 등록 (수동) | 저장 시 동기 검색 |
-| CSV / 시트 가져오기 | 배치 저장 직후 **비동기 백그라운드** 검색 |
+| CSV / 시트 가져오기 | 목록 화면에서 브라우저가 `/item/tmdb-enrich-chunk`를 반복 호출해 요청 단위 동기 보강 |
 | 수정 모달 "↺ TMDb로 업데이트" 버튼 | AJAX 즉시 검색 후 폼 갱신 |
 | 제목 변경 후 저장 | 링크 재검색 여부 확인 팝업 |
 
-### 9.5 비동기 검색 진행 표시
+### 9.5 청크 검색 진행 표시
 
 - 목록 카드에 ⏳→🔍 아이콘 실시간 표시 (2초 폴링)
 - 검색 완료 시 아이콘 제거, 🔗 아이콘 자동 노출
 - TMDb에서 찾지 못한 경우 ✕ 아이콘 표시
+- 보강 대상은 기본 15건씩 요청 수명 안에서 처리한다. 데몬 스레드를 사용하지
+  않으며 진행 상태는 Firestore `tmdb_jobs`에 저장해 워커·인스턴스 간 공유한다.
+- Firestore 미구성 로컬 환경에서는 프로세스 메모리로 폴백한다.
 
 ### 9.6 Rate Limit
 
@@ -440,7 +470,11 @@
 #### 13.1.1 저장된 연결 정보 우선 사용
 
 - 이전에 연결한 시트 정보가 있으면 연결 화면을 거치지 않고 목록 화면으로 진입한다
-- 저장된 연결 정보는 `device_id` 기준으로 우선 조회하고, 해당 기기 기록이 없으면 동일 계정(email)의 가장 최근 연결 정보를 사용한다
+- 로그인한 계정의 검증된 `sub`로 만든 `user_key`를 기준으로
+  `users/{user_key}` 문서를 직접 조회한다. 이메일 기반 조회는 신규 경로에서
+  사용하지 않는다.
+- 레거시 `sessions` 문서의 시트 설정은 신규 사용자 문서가 아직 없고 현재
+  로그인 이메일과 정확히 일치할 때만 한 번 이전한다.
 - 세션이 만료되어 재로그인한 경우에도 시트를 다시 설정하도록 요구하지 않는다
 
 #### 13.1.2 기본 시트 탐색 및 사용자 확인
@@ -471,7 +505,7 @@
 2. 가져올 워크시트 선택 후 가져오기 실행
 3. **중복 처리**: 제목(소문자) 기준 기존 항목과 비교, 중복 건너뜀
 4. 성공 시 즉시 목록으로 리디렉션
-5. TMDb 보강은 **비동기 백그라운드** 실행
+5. 목록 화면에서 요청 단위 청크 방식으로 TMDb 보강
 
 ### 13.3 CSV / Excel 파일 가져오기 (`/upload-csv`)
 
@@ -502,7 +536,7 @@
 1. CSV 또는 Excel 파일 선택 → 미리보기 (최대 50건) + 요약 통계 (전체/관람/보고싶어요/카테고리별)
 2. 등록하기 클릭 → **중복 확인** (기존 제목 소문자 비교) → **배치 저장** (단일 API 호출)
 3. 즉시 목록으로 리디렉션 (저장 완료)
-4. **비동기 백그라운드**로 TMDb 보강 진행
+4. 목록 화면에서 브라우저가 요청 단위 청크 방식으로 TMDb 보강 진행
 5. 목록 페이지에서 진행률 실시간 표시
 
 ---
@@ -518,7 +552,7 @@
 | 기본 정렬 저장 | 현재 정렬 기준을 기본값으로 저장 |
 | 시트 연결 해제 | 세션과 `users/{user_key}` 문서의 시트 정보 초기화 (시트 데이터 삭제 없음) |
 | 이 기기에서 로그아웃 | 현재 기기 세션만 삭제. 다른 기기의 로그인은 유지된다 |
-| 모든 기기에서 로그아웃 | 같은 계정의 모든 기기 세션 삭제 (`/logout-all`) |
+| 모든 기기에서 로그아웃 | 같은 계정의 모든 기기·서버 세션 삭제 (`/logout-all`) |
 
 ---
 
@@ -538,38 +572,42 @@
 
 ## 16. 상태 관리
 
-### 16.1 세션 저장 항목
+### 16.1 쿠키 상태 (`__session`)
 
 | 키 | 내용 |
 |----|------|
-| `credentials` | Google OAuth 토큰 정보 |
-| `user` | 로그인 사용자 이메일/이름/사진 |
-| `sheet_id` | 연결된 Google Sheet ID |
-| `sheet_title` | 연결된 문서 이름 |
-| `worksheet_name` | 연결된 워크시트 이름 |
-| `default_sort` | 기본 정렬 키 |
-| `csv_import_data` | CSV 파싱 결과 임시 저장 (미리보기 → 등록 사이) |
-| `import_success` | 가져오기 완료 메시지 (목록 배너용) |
-| `tmdb_pending_ids` | 비동기 TMDb 보강 대기 중인 item_id 목록 |
+| `_sid` | 서버 세션 원본을 찾는 256bit 임의 식별자 |
+| `device_id` | 브라우저 기기 식별자 |
+| `oauth_state`, `code_verifier` | OAuth 요청 검증용 임시 값 |
+| `_csrf_token` | CSRF 검증 값 |
+| `default_sort`, `import_success`, `tmdb_pending_ids` 등 | UI 설정과 일시적 진행 상태 |
+| `csv_import_data` | CSV·Excel 미리보기와 등록 사이의 임시 파싱 결과. 현재 서명 쿠키에 저장되므로 암호화되지 않으며 서버 측 임시 저장으로 이전할 개선 대상 |
 
-### 16.2 Firestore 영구 세션 상태 (`services/firestore_session.py`)
+쿠키는 서명되지만 암호화되지 않는다. 따라서 access/refresh token,
+`user_key`, 사용자 표시 정보, 시트 연결 캐시는 운영 쿠키에 저장하지 않는다.
+가져오기 파싱 결과는 현재 예외적으로 쿠키에 임시 저장되며, 파일 내용에 후기 등
+개인정보가 포함될 수 있으므로 서버 측 단기 저장과 명시적 만료 처리가 후속으로 필요하다.
 
-| 키 | 내용 |
-|----|------|
-| `device_id` | 브라우저 식별용 쿠키 값 |
-| `email` | 로그인 사용자 이메일 |
-| `refresh_token` | Google OAuth refresh_token |
-| `user` | 사용자 이메일/이름/사진 |
-| `sheet_id` | 연결된 Google Sheet ID |
-| `sheet_title` | 연결된 문서 이름 |
-| `worksheet_name` | 연결된 워크시트 이름 |
-| `updated_at` | Firestore 세션 갱신 시각 |
+### 16.2 Firestore 영구·서버 상태
 
-### 16.3 메모리 상태 (`services/tmdb_tracker.py`)
+| 컬렉션 | 저장 항목 | 보존 기준 |
+|------|------|------|
+| `users/{user_key}` | `sheet_id`, `sheet_title`, `worksheet_name`, 스키마·키 버전, 생성·갱신 시각 | 시트 연결 해제 또는 삭제 요청 시까지 |
+| `device_sessions/{device_id}` | `user_key`, `refresh_token`, 스키마·키 버전, 생성·갱신·만료 시각 | 마지막 사용 후 90일, 로그아웃 시 즉시 삭제 |
+| `server_sessions/{sha256(session_id)}` | access token·만료 시각, `user_key`, 표시용 사용자 정보, 시트 캐시, `auth_at` | 마지막 사용 후 90일, 로그아웃 시 즉시 삭제 |
+| `tmdb_jobs/{item_id}` | `status`, 생성·갱신·만료 시각 | 완료 후 TTL 정리 대상 |
 
-- 서버 메모리 딕셔너리로 item_id별 TMDb 진행 상태 추적
+- 레거시 `sessions/{device_id}`는 전환 기간에만 읽고, 이전 시 이메일·이름·
+  프로필 URL 원문을 제거한다.
+- `expires_at` 필드는 코드에서 기록하지만 실제 자동 삭제에는 Firestore TTL
+  정책이 `ACTIVE`여야 한다. 운영 상태는 배포 체크리스트로 별도 검증한다.
+
+### 16.3 TMDb 진행 상태 (`services/tmdb_tracker.py`)
+
 - 상태값: `pending` / `searching` / `done` / `not_found`
-- 서버 재시작 시 초기화됨 (임시 표시용)
+- 운영에서는 Firestore `tmdb_jobs`로 워커·인스턴스 간 상태를 공유한다.
+- Firestore 미구성 로컬 환경에서만 프로세스 메모리 딕셔너리로 폴백하며,
+  이 경우 서버 재시작 시 상태가 초기화된다.
 
 ---
 
@@ -597,6 +635,9 @@
 - 운영 환경에서 `FLASK_SECRET_KEY` 미설정 시 앱 시작 실패
 - POST/PUT/PATCH/DELETE 요청 CSRF 토큰 검증
 - 세션 쿠키: HttpOnly, SameSite=Lax, 운영 환경 Secure
+- 운영 쿠키에는 access/refresh token, 사용자 표시 정보와 시트 캐시를 두지
+  않는다. 단, 현재 `csv_import_data`는 서명 쿠키에 임시 저장되므로 서버 측
+  단기 저장으로 이전해야 한다
 - 예외 원문을 화면에 노출하지 않는다. 사용자에게는 `services/errors.py`의 정제된 안내 문구만 보여주고, 원본 예외와 스택은 서버 로그에만 기록한다
 - 개발 환경에서만 `OAUTHLIB_INSECURE_TRANSPORT=1` (HTTP 허용), `OAUTHLIB_RELAX_TOKEN_SCOPE=1`
 
@@ -608,7 +649,7 @@
 
 - **언어**: Python 3.14+ (로컬), Python 3.14-slim (Docker)
 - **웹 프레임워크**: Flask 3.x (SSR, Jinja2 템플릿)
-- **세션**: Flask 세션 + Firestore refresh_token 영구 저장
+- **세션**: Flask API 호환 하이브리드 세션 + Firestore 서버 세션·refresh_token 저장
 - **배포 런타임**: gunicorn + Cloud Run
 
 ### 19.2 외부 서비스
@@ -619,7 +660,7 @@
 | Google Sheets API v4 | 데이터 읽기/쓰기 |
 | Google Drive API | 시트 생성, 문서명 변경 |
 | TMDb API v3 | 작품 링크·공식 평점·원제 수집 |
-| Firestore | refresh_token 기반 세션 복원 |
+| Firestore | 사용자 설정, 기기별 refresh_token, 서버 세션, TMDb 작업 상태 |
 
 ### 19.3 주요 패키지
 
@@ -641,24 +682,34 @@ openpyxl==3.1.5
 ```
 app.py                      # Flask 앱, 보안 설정, Firestore 세션 자동 복원
 routes/
-  auth.py                   # Google OAuth, 데코레이터
+  auth.py                   # Google OAuth, 기기·전체 로그아웃, 데코레이터
   main.py                   # 목록 화면
   item.py                   # 등록/수정/삭제/AJAX 엔드포인트
   sheet.py                  # 시트 연결/가져오기/CSV 업로드
   settings.py               # 설정 화면
 services/
   google_sheets.py          # Sheets API 래퍼 (CRUD, 배치 저장, 삭제 이관)
-  firestore_session.py      # Firestore refresh_token 세션 저장/갱신/삭제
-  tmdb.py                   # TMDb 검색, 동기/비동기 보강
-  tmdb_tracker.py           # 비동기 TMDb 진행 상태 추적
+  google_credentials.py     # OAuth 자격증명 최소 직렬화·복원
+  firestore_session.py      # 사용자 설정·기기 refresh_token 저장소
+  hybrid_session.py         # 쿠키와 서버 저장소를 분리하는 SessionInterface
+  server_session.py         # Firestore server_sessions 저장소
+  session_state.py          # 인증 신선도·기기 식별자 헬퍼
+  user_identity.py          # 검증된 Google sub 기반 HMAC 사용자 키
+  errors.py                 # 사용자용 오류 메시지 정제
+  tmdb.py                   # TMDb 검색, 요청 단위 청크 보강
+  tmdb_tracker.py           # Firestore 기반 TMDb 진행 상태 추적
   csv_import.py             # CSV/Excel 파싱, 날짜·평점 변환
 templates/
+  login.html                # 로그인
   list.html                 # 목록 메인
   partials/item_form.html   # 등록/수정 공통 폼
   connect.html              # 시트 연결
   import_sheet.html         # 시트 가져오기
   upload_csv.html           # CSV 가져오기
   settings.html             # 설정
+docs/legal/
+  privacy-policy-draft.md   # 개인정보처리방침 콘텐츠 초안
+  terms-of-service-draft.md # 이용약관 콘텐츠 초안
 static/
   css/style.css
   js/main.js
@@ -671,8 +722,9 @@ version.py                  # 앱 버전
 
 - 포트: 8090
 - 실행: `export $(cat .env | xargs) && python3 app.py`
-- Cloud Run 실행: `gunicorn --bind "0.0.0.0:${PORT}" --workers 2 --threads 8 --timeout 60 app:app`
-- 필수 환경 변수: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `FLASK_SECRET_KEY`, `REDIRECT_URI`
+- Cloud Run 실행: `gunicorn --bind "0.0.0.0:${PORT}" --workers 2 --threads 8 --timeout 120 app:app`
+- 필수 환경 변수: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `FLASK_SECRET_KEY`,
+  `USER_KEY_HMAC_SECRET`, `REDIRECT_URI`
 - 선택 환경 변수: `TMDB_API_KEY` (미설정 시 TMDb 기능 전체 스킵)
 - 배포 선택 환경 변수: `GOOGLE_CLOUD_PROJECT`, `CLOUD_RUN_REGION`, `PUBLIC_BASE_URL`
 - 환경 구분: `APP_ENV=development|production`
@@ -706,13 +758,15 @@ version.py                  # 앱 버전
 | Excel(.xlsx/.xls) 가져오기 | ✅ |
 | CSV "보고 싶어요" 항목 정상 가져오기 | ✅ |
 | 배치 저장 (단일 API 호출) | ✅ |
-| 비동기 TMDb 보강 (가져오기 후 백그라운드) | ✅ |
+| 요청 단위 TMDb 청크 보강 (가져오기 후 브라우저 반복 호출) | ✅ |
 | TMDb 진행 상태 아이콘 실시간 표시 | ✅ |
 | 진행률 % 배너 | ✅ |
 | 원제(originalTitle) 수집 및 표시 | ✅ |
 | 설정 (문서명·워크시트명 변경, 기본 정렬) | ✅ |
-| Firestore refresh_token 영구 세션 복원 | ✅ |
+| Firestore 서버 세션 및 refresh_token 자동 세션 복원 | ✅ |
 | CSRF 및 세션 쿠키 보안 설정 | ✅ |
 | 수정 충돌 방지(optimistic locking) | ✅ |
 | Cloud Run 배포 구성 | ✅ |
 | 헤더 버전·사용자명 표시 | ✅ |
+| 개인정보처리방침·이용약관 콘텐츠 초안 | 🟡 |
+| `/privacy`, `/terms` 공개 및 로그인 화면 링크 | ⬜ |
