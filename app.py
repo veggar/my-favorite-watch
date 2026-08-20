@@ -41,6 +41,7 @@ from services.google_credentials import (  # noqa: E402
     build_credentials as _build_credentials,
     session_payload as _session_payload,
 )
+from services.hybrid_session import HybridSessionInterface  # noqa: E402
 from services.session_state import auth_timestamp, is_auth_fresh  # noqa: E402
 from services.user_identity import USER_KEY_VERSION as _USER_KEY_VERSION  # noqa: E402
 
@@ -54,6 +55,12 @@ if not _secret_key:
     else:
         raise RuntimeError("FLASK_SECRET_KEY 환경 변수가 설정되지 않았습니다.")
 app.secret_key = _secret_key
+
+# ── 서버 측 세션 (task-2026-08-003) ────────────────────────────────────────
+# 민감한 세션 값(credentials · user_key · user · 시트 캐시)은 Firestore
+# `server_sessions` 에 두고, 쿠키에는 예측 불가능한 session_id 만 남긴다.
+# Firestore 미구성(로컬 개발) 시 표준 쿠키 세션으로 자동 폴백한다.
+app.session_interface = HybridSessionInterface()
 
 # ── 세션 쿠키 (Firebase Hosting 제약) ──────────────────────────────────────
 #
