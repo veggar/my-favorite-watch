@@ -563,6 +563,9 @@ gcloud firestore fields ttls update updated_at \
 - [ ] 세션 쿠키를 디코드했을 때 `credentials` · `user_key` · `user` 없이 `_sid`만 있는지 (서버 측 세션, task-2026-08-003)
 - [ ] 로그인 후 Firestore `server_sessions`에 문서가 생기고, 로그아웃 시 삭제되는지
 - [ ] `server_sessions` TTL 정책이 `ACTIVE`인지 (10.3.1)
+- [ ] `device_sessions` TTL 정책이 `ACTIVE`인지 (10.3, 2026-08-21 적용 완료)
+- [ ] `csv_import_staging` TTL 정책이 `ACTIVE`인지 (10.3.2)
+- [ ] CSV/Excel 업로드 미리보기 직후 세션 쿠키를 디코드했을 때 `csv_import_data`(구 키)가 아니라 `csv_staging_id`만 있고, 파싱한 후기·줄거리 원문이 쿠키 어디에도 없는지
 
 ---
 
