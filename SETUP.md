@@ -3,8 +3,8 @@
 로컬 개발 환경 구성부터 Cloud Run 배포, 배포 후 1회성 설정까지 다룬다.
 기능 정의는 `PRD.md`, 작업 규칙은 `CLAUDE.md`를 따른다.
 
-- 대상 버전: v1.6.0
-- 런타임: Python 3.12 / Flask (SSR)
+- 대상 버전: v1.6.1
+- 런타임: Python 3.14 / Flask (SSR)
 - 배포: Cloud Run (`asia-northeast3`)
 
 ---
