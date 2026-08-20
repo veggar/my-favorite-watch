@@ -187,7 +187,7 @@ CSV·Excel 가져오기 미리보기 결과도 현재 이 서명 쿠키에 임�
 - [ ] 운영 주체, 주소, 문의처, 개인정보 보호책임자 확정 (운영 주체명·문의 이메일은 `SERVICE_OPERATOR`/`PRIVACY_CONTACT_EMAIL` 환경 변수로 2026-08-20 확정. 물리 주소·대표자·개인정보 보호책임자 지정은 아직 미확정 — `services/site_info.py`가 다루지 않는 항목)
 - [ ] 한국 사용자 대상 여부 및 운영 주체 소재지 확정
 - [x] 만 14세 미만 이용 정책 확정 — 2026-08-20 운영자 결정: 별도 연령 제한 없이 Google 계정 보유자 누구나 이용 가능. Google 계정 자체의 최소 연령 정책에 위임 (본문 8절, `templates/privacy.html` 반영 완료)
-- [ ] Google Cloud 실제 로그 항목·보존기간과 Firestore TTL `ACTIVE` 확인
+- [x] Google Cloud 실제 로그 항목·보존기간과 Firestore TTL `ACTIVE` 확인 — 2026-08-21 확인·적용 완료. Cloud Logging `_Default` 30일/`_Required` 400일(GCP 기본값, 별도 연장 없음). Firestore `refresh-token` DB의 `tmdb_jobs`·`device_sessions`·`server_sessions`·`csv_import_staging` 4개 컬렉션 모두 `expires_at` 기준 TTL `ACTIVE` (`gcloud firestore fields ttls list --database=refresh-token`로 확인 가능)
 - [x] `csv_import_data`를 서명 쿠키에서 서버 측 단기 저장으로 이전하고 만료·삭제 검증 — 2026-08-20 `services/csv_import_staging.py`(Firestore `csv_import_staging` 컬렉션, 30분 TTL, 등록 시 1회 소비 후 즉시 삭제)로 이전 완료. 쿠키에는 `csv_staging_id`만 남는다
 - [ ] Google·TMDb의 정확한 수탁·제공·국외 이전 법인명, 국가, 연락처, 보유기간 확인
 - [ ] 계정·서버 저장정보 삭제 요청 처리 절차와 처리기한 확정
