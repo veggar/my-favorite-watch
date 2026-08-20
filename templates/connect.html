@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  {% include 'partials/head_meta.html' %}
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>시트 연결 — My Favorite Watch</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
@@ -24,6 +23,7 @@
   </style>
 </head>
 <body class="connect-page">
+{% include 'partials/boot_loading.html' %}
   <div class="connect-container">
     <div class="connect-header">
       <span class="logo-icon">🎬</span>

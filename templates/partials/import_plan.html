@@ -1,0 +1,62 @@
+{#
+  가져오기 영향 범위 표시 (P2-4).
+  기대 변수: plan (services.import_plan.plan_import 결과), source_label (출처 설명 문구)
+#}
+{% if not plan.checked %}
+<div class="alert alert-error">
+  현재 연결된 시트를 읽지 못해 중복 건수를 미리 계산하지 못했습니다.
+  가져오기를 실행하면 중복 항목은 자동으로 건너뜁니다.
+</div>
+{% endif %}
+
+<div class="plan-summary">
+  <div class="plan-item plan-add">
+    <span class="plan-label">추가 (건)</span>
+    <span class="plan-value">{{ plan.to_add }}</span>
+  </div>
+  <div class="plan-item">
+    <span class="plan-label">중복 건너뜀 (건)</span>
+    <span class="plan-value">{{ plan.duplicates }}</span>
+  </div>
+  <div class="plan-item plan-total">
+    <span class="plan-label">전체 (건)</span>
+    <span class="plan-value">{{ plan.total }}</span>
+  </div>
+</div>
+
+<p class="form-hint">
+  {{ source_label }}의 {{ plan.total }}건 중
+  <strong>{{ plan.to_add }}건</strong>이 현재 시트에 추가되고,
+  이미 같은 제목이 있는 <strong>{{ plan.duplicates }}건</strong>은 건너뜁니다.
+  기존 데이터는 변경되지 않습니다.
+</p>
+
+{% if plan.untitled %}
+<p class="form-hint plan-warn">제목이 비어 있는 {{ plan.untitled }}건은 중복 검사 없이 그대로 추가됩니다.</p>
+{% endif %}
+
+{% if plan.in_file_duplicate_titles %}
+<p class="form-hint plan-warn">
+  가져올 데이터 안에 같은 제목이 여러 번 있는 항목이 {{ plan.in_file_duplicate_titles | length }}종 있습니다.
+  현재 시트에 없는 제목이면 <strong>모두 추가</strong>되므로 중복 행이 생길 수 있습니다.
+</p>
+<details class="plan-details">
+  <summary>파일 내 중복 제목 보기 ({{ plan.in_file_duplicate_titles | length }}종)</summary>
+  <ul class="plan-title-list">
+    {% for t in plan.in_file_duplicate_titles %}
+    <li>{{ t }}</li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+
+{% if plan.duplicate_titles %}
+<details class="plan-details">
+  <summary>건너뛸 중복 제목 보기 ({{ plan.duplicate_titles | length }}종)</summary>
+  <ul class="plan-title-list">
+    {% for t in plan.duplicate_titles %}
+    <li>{{ t }}</li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}

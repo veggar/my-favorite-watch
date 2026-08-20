@@ -266,6 +266,96 @@ a.card-title:hover { text-decoration-color: var(--color-primary); }
 /* ===== 성공 알림 ===== */
 .alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
 
+/* ===== 확인 모달 (P2-3) ===== */
+.confirm-overlay { align-items: center; justify-content: center; padding: 16px; z-index: 400; }
+.confirm-modal {
+  border-radius: var(--radius);
+  width: 100%; max-width: 400px;
+  padding: 20px 16px 16px;
+}
+.confirm-message {
+  font-size: 14px; line-height: 1.6; color: var(--color-text);
+  margin-bottom: 20px; word-break: keep-all;
+}
+.confirm-modal .form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.confirm-modal .form-actions .btn { min-width: 80px; }
+
+/* ===== 로그인 화면 약관 링크 (P0-4) ===== */
+.login-consent {
+  margin-top: 24px;
+  font-size: 12px; line-height: 1.7; color: var(--color-text-muted);
+}
+.login-consent a { color: var(--color-primary); text-decoration: underline; }
+
+/* ===== 가져오기 영향 범위 (P2-4) ===== */
+.plan-summary {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  margin-bottom: 12px;
+}
+.plan-item {
+  flex: 1 1 96px; min-width: 96px; max-width: 200px;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  background: var(--color-bg);
+}
+.plan-item.plan-add { border-color: var(--color-watched-border); background: var(--color-watched-bg); }
+/* 처리된 값(합계)은 오른쪽 끝에 두고 배경으로 구분한다 (ui-ux-standards §5) */
+.plan-item.plan-total { background: #eef2ff; border-color: #c7d2fe; }
+.plan-label { font-size: 11px; color: var(--color-text-muted); }
+.plan-value { font-size: 20px; font-weight: 700; text-align: right; }
+.plan-warn { color: #92400e; }
+.plan-details { margin-top: 8px; font-size: 13px; }
+.plan-details summary { cursor: pointer; color: var(--color-primary); }
+.plan-title-list {
+  margin: 8px 0 0 18px; padding: 0;
+  max-height: 180px; overflow-y: auto;
+  font-size: 13px; color: var(--color-text-muted);
+}
+.plan-title-list li { margin-bottom: 2px; word-break: break-all; }
+
+/* ===== 문서 페이지 (개인정보처리방침 · 이용약관, P0-4) ===== */
+.doc-container { padding: 16px; max-width: 760px; margin: 0 auto 48px; }
+.doc-title { font-size: 22px; font-weight: 700; margin: 8px 0 6px; }
+.doc-meta { font-size: 12px; color: var(--color-text-muted); }
+.doc-lead {
+  margin-top: 16px; padding: 12px 14px;
+  background: #fff; border-radius: var(--radius); box-shadow: var(--shadow);
+  font-size: 14px; line-height: 1.7;
+}
+.doc-section {
+  background: #fff; border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 16px; margin-top: 16px;
+}
+.doc-section h2 { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
+.doc-section p { font-size: 14px; line-height: 1.75; margin-bottom: 8px; }
+.doc-section a { color: var(--color-primary); text-decoration: underline; }
+.doc-section code {
+  background: var(--color-bg); border: 1px solid var(--color-border);
+  border-radius: 4px; padding: 0 4px; font-size: 12px;
+}
+.doc-list { margin: 0 0 8px 18px; }
+.doc-list li { font-size: 14px; line-height: 1.75; margin-bottom: 4px; }
+.doc-note {
+  margin-top: 10px; padding: 10px 12px;
+  background: var(--color-bg); border-left: 3px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  font-size: 13px; line-height: 1.7; color: var(--color-text-muted);
+}
+.doc-table-outer { overflow-x: auto; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+.doc-table { border-collapse: collapse; width: 100%; min-width: 480px; font-size: 13px; }
+.doc-table th, .doc-table td {
+  padding: 8px 10px; border-bottom: 1px solid var(--color-border);
+  text-align: left; vertical-align: top; line-height: 1.6;
+}
+.doc-table thead th { background: var(--color-bg); font-weight: 600; white-space: nowrap; }
+.doc-table tbody tr:last-child td { border-bottom: none; }
+.doc-footer {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin-top: 24px; font-size: 13px; color: var(--color-text-muted);
+}
+.doc-footer a { color: var(--color-primary); text-decoration: underline; }
+
 /* ===== 검색 자동 실행 ===== */
 @media (max-width: 480px) {
   .form-row { grid-template-columns: 1fr; }

@@ -86,15 +86,10 @@ function openEditModal(id) {
   document.getElementById("edit-tmdb-update-result").style.display = "none";
   document.getElementById("edit-tmdb-update-result").textContent = "";
 
-  // title 변경 감지 → 링크 재검색 여부 물어보기
-  document.getElementById("edit-form-title").addEventListener("change", function () {
-    const newTitle = this.value.trim();
-    const original = document.getElementById("edit-original-title").value.trim();
-    if (newTitle && newTitle !== original) {
-      const refresh = confirm(`제목이 변경되었습니다.\n"${newTitle}"으로 작품 링크를 새로 검색할까요?`);
-      document.getElementById("edit-refresh-link").value = refresh ? "true" : "false";
-    }
-  }, { once: true });
+  // 제목 변경 시 링크 재검색 여부는 저장 시점에 확인한다.
+  // (아래 submit 리스너 참조. 입력 도중 change 시점에 묻던 방식은 수정을
+  //  끝내기 전에 판단을 강요했고, 네이티브 confirm() 이라 스타일도 어긋났다.)
+  document.getElementById("edit-refresh-link").value = "false";
 
   document.getElementById("edit-overlay").style.display = "flex";
   document.getElementById("edit-form-title").focus();
@@ -235,6 +230,33 @@ if (searchInput) {
     }, 400);
   });
 }
+
+// ===== 수정 저장 시 제목 변경 확인 (P2-3) =====
+// 캡처 단계에서 가로채 로딩 오버레이가 먼저 뜨지 않도록 한다.
+document.addEventListener("submit", function (e) {
+  const form = e.target;
+  if (!form || form.id !== "edit-form") return;
+  if (form.dataset.linkAsked === "1") { delete form.dataset.linkAsked; return; }
+  if (typeof appConfirm !== "function") return;
+
+  const newTitle = document.getElementById("edit-form-title").value.trim();
+  const original = document.getElementById("edit-original-title").value.trim();
+  if (!newTitle || newTitle === original) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  appConfirm({
+    title: "작품 링크 재검색",
+    message: `제목이 "${original}"에서 "${newTitle}"(으)로 변경되었습니다. 변경된 제목으로 작품 링크를 새로 검색할까요?`,
+    confirmLabel: "새로 검색",
+  }).then(refresh => {
+    // 취소를 눌러도 저장은 진행한다(기존 동작과 동일). 링크만 그대로 둔다.
+    document.getElementById("edit-refresh-link").value = refresh ? "true" : "false";
+    form.dataset.linkAsked = "1";
+    form.requestSubmit ? form.requestSubmit() : form.submit();
+  });
+}, true);
 
 // ===== 폼 제출 시 로딩 표시 =====
 document.querySelectorAll("form[method=post]").forEach(form => {

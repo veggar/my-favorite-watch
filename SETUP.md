@@ -48,6 +48,14 @@ pip install -r requirements-dev.txt      # 실행 + 테스트(pytest)
 > `spreadsheets` / `drive.metadata.readonly`는 민감 스코프이므로 검증 대상이며,
 > 통상 2~6주가 소요된다.
 
+4. 앱 검증 제출 시 **개인정보처리방침 링크**에 `{공개 주소}/privacy`를,
+   **홈페이지 URL**에 서비스 주소를 입력한다. 라우트는 구현되어 있지만
+   ([운영자 입력 필요]가 채워지지 않으면 화면에 "설정 필요" 경고가 노출된다),
+   본 문서의 5절 `SERVICE_OPERATOR` / `PRIVACY_CONTACT_EMAIL` / `SERVICE_URL` /
+   `POLICY_EFFECTIVE_DATE`를 채우고, `docs/legal/privacy-policy-draft.md` ·
+   `docs/legal/terms-of-service-draft.md`의 "배포 전 필수 확인" 체크리스트와
+   법률 전문가 검토를 마친 뒤 제출한다.
+
 ### 3.2 클라이언트 ID
 
 1. **API 및 서비스 → 사용자 인증 정보 → OAuth 클라이언트 ID 만들기**
@@ -94,6 +102,10 @@ cp .env.example .env
 | `SESSION_LIFETIME_HOURS` | | `12` | (구 변수) `AUTH_FRESHNESS_HOURS`의 폴백. 쿠키 수명은 90일 고정이며 이 값이 아니다 |
 | `TMDB_ENRICH_CHUNK` | | `15` | 한 요청에서 동기 보강할 항목 수. 늘리면 요청 시간이 길어져 타임아웃 위험이 커진다 |
 | `PUBLIC_BASE_URL` | | `https://mfw.worldapex.studio` | **배포 스크립트 전용.** Cloud Run에 주입할 `REDIRECT_URI`의 기준 주소 |
+| `SERVICE_OPERATOR` | ✅(공개 전) | (빈 값) | `/privacy`, `/terms`에 표시할 운영 주체명. 개인정보이므로 코드에 하드코딩하지 않는다. 미설정 시 화면에 "[운영 주체 미설정]"이 노출된다 |
+| `PRIVACY_CONTACT_EMAIL` | ✅(공개 전) | (빈 값) | `/privacy`, `/terms`에 표시할 문의 이메일 |
+| `SERVICE_URL` | ✅(공개 전) | `PUBLIC_BASE_URL` | `/privacy`, `/terms`에 표시할 서비스 주소 |
+| `POLICY_EFFECTIVE_DATE` | ✅(공개 전) | (빈 값) | `/privacy`, `/terms`의 시행일 |
 
 `FLASK_SECRET_KEY` 생성:
 

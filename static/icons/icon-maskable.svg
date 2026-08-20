@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="My Favorite Watch">
+  <title>My Favorite Watch</title>
+  <!--
+    maskable 용 변형. 플랫폼이 원/스퀘어클/라운드 스퀘어 등 임의 모양으로 잘라내므로
+    배경을 모서리까지 채우고(full-bleed), 콘텐츠는 중앙 안전 영역(반지름 40%) 안에 둔다.
+    콘텐츠 최외곽 꼭짓점(112,148)의 중심 거리는 180px 로 안전 반지름 204.8px 이내다.
+  -->
+  <defs>
+    <linearGradient id="mfw-bg-maskable" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#3730a3"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="512" height="512" fill="url(#mfw-bg-maskable)"/>
+  <rect x="112" y="148" width="288" height="216" rx="28" ry="28" fill="#ffffff"/>
+  <g fill="#4f46e5">
+    <rect x="126" y="168" width="26" height="22" rx="6" ry="6"/>
+    <rect x="126" y="212" width="26" height="22" rx="6" ry="6"/>
+    <rect x="126" y="256" width="26" height="22" rx="6" ry="6"/>
+    <rect x="126" y="300" width="26" height="22" rx="6" ry="6"/>
+    <rect x="360" y="168" width="26" height="22" rx="6" ry="6"/>
+    <rect x="360" y="212" width="26" height="22" rx="6" ry="6"/>
+    <rect x="360" y="256" width="26" height="22" rx="6" ry="6"/>
+    <rect x="360" y="300" width="26" height="22" rx="6" ry="6"/>
+  </g>
+  <path d="M232 214 L232 298 L306 256 Z" fill="#4f46e5"/>
+</svg>

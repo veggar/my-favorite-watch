@@ -30,6 +30,18 @@ CATEGORY_KEYWORDS = {
 }
 
 
+def is_header_row(first_cell: str) -> bool:
+    """첫 컬럼 값으로 헤더 행 여부를 판정한다 (CSV·Excel 공통).
+
+    업로드 안내(templates/upload_csv.html)는 컬럼 순서를 "관람여부, 장르, 제목, ..."
+    로 안내하므로 "관람여부"도 인식해야 한다. 이 함수 이전에는 CSV 경로가
+    "관람"/"watched"/빈칸만 인식해, 안내대로 "관람여부" 헤더를 넣은 CSV 파일의
+    헤더 행이 제목 "제목"인 가짜 작품으로 등록되고 있었다. Excel 경로는
+    "관람여부"를 인식해 같은 파일이 확장자에 따라 다르게 처리되는 불일치도 있었다.
+    """
+    return (first_cell or "").strip().lower() in ("관람", "관람여부", "watched", "")
+
+
 def _parse_grade(raw: str) -> str:
     """문자 등급을 숫자 평점(0.0~5.0)으로 변환. 변환 불가 시 빈 문자열."""
     if not raw:
@@ -107,7 +119,7 @@ def parse_csv(file_content: bytes, encoding: str = "utf-8") -> list[dict]:
 
     # 첫 행 헤더 확인 (한글 헤더 or 데이터)
     start_idx = 0
-    if rows and rows[0] and rows[0][0].strip() in ("관람", "watched", ""):
+    if rows and rows[0] and is_header_row(rows[0][0]):
         start_idx = 1  # 헤더 스킵
 
     items = []
@@ -171,8 +183,7 @@ def parse_xlsx(file_content: bytes) -> list[dict]:
         # 첫 행이 헤더인지 확인
         if first_row:
             first_row = False
-            first_val = str(row[0] or "").strip().lower()
-            if first_val in ("관람", "watched", "관람여부", ""):
+            if is_header_row(str(row[0] or "")):
                 continue  # 헤더 스킵
 
         padded = [str(cell) if cell is not None else "" for cell in row]

@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  {% include 'partials/head_meta.html' %}
   <title>설정 — My Favorite Watch</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body class="settings-page">
+{% include 'partials/boot_loading.html' %}
 
   <header class="app-header">
     <div class="header-left">
@@ -37,14 +37,22 @@
           </div>
         </div>
       </div>
-      <form method="post" action="{{ url_for('auth.logout') }}">
+      {# 로그아웃은 서버에 저장된 계정 정보·인증 토큰까지 삭제하므로 확인을 받는다 #}
+      <form method="post" action="{{ url_for('auth.logout') }}"
+            data-confirm-title="로그아웃"
+            data-confirm="로그아웃하면 이 기기에 저장된 인증 정보가 삭제되어 다시 로그인해야 합니다. 시트에 저장된 기록은 그대로 유지됩니다."
+            data-confirm-label="로그아웃"
+            data-confirm-variant="danger">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-danger btn-full">이 기기에서 로그아웃</button>
       </form>
-      <form method="post" action="{{ url_for('auth.logout_all') }}" style="margin-top:8px;">
+      <form method="post" action="{{ url_for('auth.logout_all') }}" style="margin-top:8px;"
+            data-confirm-title="모든 기기에서 로그아웃"
+            data-confirm="같은 계정으로 로그인한 모든 기기에서 로그아웃합니다. 계속할까요?"
+            data-confirm-label="모든 기기 로그아웃"
+            data-confirm-variant="danger">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="btn btn-danger btn-full"
-                onclick="return confirm('모든 기기에서 로그아웃합니다. 계속할까요?');">
+        <button type="submit" class="btn btn-danger btn-full">
           모든 기기에서 로그아웃
         </button>
       </form>
@@ -151,6 +159,20 @@
       </form>
     </section>
 
+    <!-- 약관·방침 -->
+    <section class="settings-section">
+      <h2 class="section-title">서비스 정보</h2>
+      <div class="settings-item">
+        <div class="settings-meta">버전 {{ app_version }}</div>
+      </div>
+      <nav class="doc-footer" style="justify-content:flex-start;">
+        <a href="{{ url_for('site.privacy') }}">개인정보처리방침</a>
+        <span aria-hidden="true">·</span>
+        <a href="{{ url_for('site.terms') }}">이용약관</a>
+      </nav>
+    </section>
+
   </main>
+  <script src="{{ url_for('static', filename='js/confirm-modal.js') }}"></script>
 </body>
 </html>

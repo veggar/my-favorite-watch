@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  {% include 'partials/head_meta.html' %}
   <title>CSV 가져오기 — My Favorite Watch</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body class="settings-page">
+{% include 'partials/boot_loading.html' %}
 
   <header class="app-header">
     <div class="header-left">
@@ -109,15 +109,33 @@
 
     <section class="settings-section">
       <h2 class="section-title">Google Sheet에 등록</h2>
+
+      {% if plan %}
+      {# 제출 전에 실제 추가·중복 건수를 계산해 보여준다 (P2-4) #}
+      {% with plan=plan, source_label="선택한 파일" %}
+        {% include 'partials/import_plan.html' %}
+      {% endwith %}
+      {% else %}
       <p class="connect-desc" style="margin-bottom:12px;">
         <strong>{{ summary.total }}개</strong> 작품을 현재 연결된 시트에 추가합니다.<br>
         기존 데이터는 유지되고 새 행으로 추가됩니다.
       </p>
-      <form method="post" onsubmit="this.querySelector('button').disabled=true; document.getElementById('loading-overlay').style.display='flex';">
+      {% endif %}
+
+      {% set add_count = plan.to_add if plan else summary.total %}
+      {% if add_count > 0 %}
+      <form method="post"
+            data-confirm-title="Google Sheet에 등록"
+            data-confirm="{{ add_count }}건을 현재 연결된 시트에 추가합니다.{% if plan and plan.duplicates %} 중복 {{ plan.duplicates }}건은 건너뜁니다.{% endif %} 기존 데이터는 유지됩니다."
+            data-confirm-label="{{ add_count }}건 등록"
+            onsubmit="this.querySelector('button').disabled=true; document.getElementById('loading-overlay').style.display='flex';">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="import">
-        <button type="submit" class="btn btn-primary btn-full">{{ summary.total }}개 등록하기</button>
+        <button type="submit" class="btn btn-primary btn-full">{{ add_count }}개 등록하기</button>
       </form>
+      {% else %}
+      <p class="form-hint">추가할 새 항목이 없습니다. 파일의 모든 항목이 이미 시트에 있습니다.</p>
+      {% endif %}
       <a href="{{ url_for('sheet.upload_csv') }}" class="btn btn-secondary btn-full" style="margin-top:8px;">다시 선택</a>
     </section>
     {% endif %}
@@ -127,6 +145,8 @@
   <div class="loading-overlay" id="loading-overlay" style="display:none;">
     <div class="loading-spinner"></div>
   </div>
+
+  <script src="{{ url_for('static', filename='js/confirm-modal.js') }}"></script>
 
   <style>
     .csv-summary { display: flex; gap: 16px; margin-bottom: 12px; flex-wrap: wrap; }

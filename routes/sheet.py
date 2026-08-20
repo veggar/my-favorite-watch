@@ -10,6 +10,7 @@ from services.google_sheets import (
     create_spreadsheet,
     find_spreadsheet_by_name,
     import_from_sheet,
+    read_source_items,
     get_all_items,
     get_items_title_map,
     append_items_batch,
@@ -23,10 +24,25 @@ from services.google_sheets import (
 from services.tmdb import enrich_item, enrich_items_batch
 from services.tmdb_tracker import mark_pending
 from services.firestore_session import update_sheet_from_session
+from services.import_plan import plan_import
 
 logger = logging.getLogger(__name__)
 
 sheet_bp = Blueprint("sheet", __name__)
+
+
+def _existing_title_map_or_none(credentials, sheet_id: str, worksheet_name: str):
+    """대상 시트의 제목 맵을 조회한다. 실패하면 None 을 돌려준다 (P2-4).
+
+    미리 계산은 편의 기능이므로, 조회에 실패했다고 해서 가져오기 자체를 막지는
+    않는다. 대신 plan_import 가 `checked=False` 로 표시해 화면에서 "확인 불가"로
+    안내한다.
+    """
+    try:
+        return get_items_title_map(credentials, sheet_id, worksheet_name)
+    except Exception:
+        logger.warning("가져오기 미리 계산용 대상 시트 조회 실패", exc_info=True)
+        return None
 
 
 def _save_sheet_session(sheet_id: str, sheet_title: str, worksheet_name: str):
@@ -184,11 +200,17 @@ def connect_create():
 @sheet_bp.route("/import-sheet", methods=["GET", "POST"])
 @login_required
 def import_sheet():
-    """다른 구글 시트에서 데이터 가져오기."""
+    """다른 구글 시트에서 데이터 가져오기.
+
+    단계: URL 입력 → 워크시트 선택(preview) → 영향 범위 확인(analyze) → 실행(import).
+    analyze 단계에서 실제 추가·중복 건수를 미리 계산해 보여준다 (P2-4).
+    """
     error = None
     success = None
     worksheets = []
     src_sheet_id = ""
+    plan = None
+    selected_worksheet = ""
 
     if request.method == "POST":
         action = request.form.get("action", "preview")
@@ -203,6 +225,18 @@ def import_sheet():
                 if action == "preview":
                     info = verify_sheet_access(credentials, src_sheet_id)
                     worksheets = info["worksheets"]
+                elif action == "analyze":
+                    selected_worksheet = request.form.get("src_worksheet", "")
+                    worksheets = verify_sheet_access(credentials, src_sheet_id)["worksheets"]
+                    src_items = read_source_items(credentials, src_sheet_id, selected_worksheet)
+                    plan = plan_import(
+                        src_items,
+                        _existing_title_map_or_none(
+                            credentials,
+                            session.get("sheet_id"),
+                            session.get("worksheet_name", DEFAULT_WORKSHEET_NAME),
+                        ),
+                    )
                 elif action == "import":
                     src_worksheet = request.form.get("src_worksheet", "")
                     dst_sheet_id = session.get("sheet_id")
@@ -250,6 +284,8 @@ def import_sheet():
         success=success,
         worksheets=worksheets,
         src_sheet_id=src_sheet_id,
+        plan=plan,
+        selected_worksheet=selected_worksheet,
     )
 
 
@@ -263,6 +299,7 @@ def upload_csv():
     error = None
     preview = None
     summary = None
+    plan = None
 
     if request.method == "POST":
         action = request.form.get("action", "preview")
@@ -285,6 +322,16 @@ def upload_csv():
                         summary = summarize(items)
                         preview = items
                         session["csv_import_data"] = items
+                        # 제출 전에 실제 추가·중복 건수를 계산해 보여준다 (P2-4).
+                        if session.get("sheet_id"):
+                            plan = plan_import(
+                                items,
+                                _existing_title_map_or_none(
+                                    get_credentials(),
+                                    session["sheet_id"],
+                                    session.get("worksheet_name", DEFAULT_WORKSHEET_NAME),
+                                ),
+                            )
                 except Exception as e:
                     # 파일 파싱 오류 원문에는 경로·내부 구조가 포함될 수 있다.
                     logger.exception("CSV/Excel 파싱 실패 (%s)", type(e).__name__)
@@ -342,5 +389,6 @@ def upload_csv():
         error=error,
         preview=preview,
         summary=summary,
+        plan=plan,
         import_success=import_success,
     )
