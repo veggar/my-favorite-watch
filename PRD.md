@@ -1,6 +1,6 @@
 # My Favorite Watch — 구글 시트 기반 영상 작품 기록 관리 앱 기능 정의서
 
-> 마지막 업데이트: 2026-05-25
+> 마지막 업데이트: 2026-08-20
 
 ---
 
@@ -606,7 +606,7 @@
 
 ### 19.1 프레임워크
 
-- **언어**: Python 3.11+ (로컬), Python 3.12-slim (Docker)
+- **언어**: Python 3.14+ (로컬), Python 3.14-slim (Docker)
 - **웹 프레임워크**: Flask 3.x (SSR, Jinja2 템플릿)
 - **세션**: Flask 세션 + Firestore refresh_token 영구 저장
 - **배포 런타임**: gunicorn + Cloud Run
