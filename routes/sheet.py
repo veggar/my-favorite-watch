@@ -1,14 +1,16 @@
 import logging
+import os
+import re
 
 from flask import Blueprint, render_template, request, session, redirect, url_for, jsonify
 from routes.auth import login_required, get_credentials
 from services.errors import friendly_error, http_status
+from services.google_credentials import PICKER_SCOPE, client_id as google_client_id
 from services.google_sheets import (
     extract_sheet_id,
     verify_sheet_access,
     ensure_worksheet,
     create_spreadsheet,
-    find_spreadsheet_by_name,
     import_from_sheet,
     read_source_items,
     get_all_items,
@@ -30,6 +32,34 @@ from services import csv_import_staging
 logger = logging.getLogger(__name__)
 
 sheet_bp = Blueprint("sheet", __name__)
+
+# Google Sheet 문서 ID 형식 (URL 경로 세그먼트와 동일한 문자 집합).
+# Picker 가 전달한 값도 이 형식을 통과해야 하며, 통과하더라도
+# _attach_spreadsheet() 가 Sheets API 로 실제 접근 가능 여부를 재검증한다.
+_SHEET_ID_RE = re.compile(r"^[A-Za-z0-9_-]{10,128}$")
+
+# 워크시트 이름 최대 길이 (Google Sheets 자체 제한은 100자)
+_WORKSHEET_NAME_MAX = 100
+
+
+def _picker_config() -> dict:
+    """Google Picker 공개 설정값. 비밀이 아닌 값만 담는다.
+
+    - api_key: HTTP 리퍼러·API 제한이 걸린 브라우저 키 (공개 전제)
+    - project_number: Picker setAppId() 용 Cloud 프로젝트 번호
+    - client_id: GIS Token Model 이 drive.file 단기 토큰을 받을 때 사용
+    서버 세션의 access/refresh token 은 절대 포함하지 않는다.
+    """
+    api_key = os.environ.get("GOOGLE_PICKER_API_KEY", "").strip()
+    project_number = os.environ.get("GOOGLE_CLOUD_PROJECT_NUMBER", "").strip()
+    cid = google_client_id()
+    return {
+        "enabled": bool(api_key and project_number and cid),
+        "api_key": api_key,
+        "project_number": project_number,
+        "client_id": cid,
+        "scope": PICKER_SCOPE,
+    }
 
 
 def _existing_title_map_or_none(credentials, sheet_id: str, worksheet_name: str):
@@ -141,34 +171,31 @@ def connect():
 
     return render_template("connect.html", user=session.get("user"), error=error,
                            default_worksheet=DEFAULT_WORKSHEET_NAME,
-                           default_spreadsheet=DEFAULT_SPREADSHEET_NAME)
+                           default_spreadsheet=DEFAULT_SPREADSHEET_NAME,
+                           picker=_picker_config())
 
 
 # ── 시트 연결 JSON 엔드포인트 ──────────────────────────────────────────────
 
-@sheet_bp.route("/connect/discover", methods=["POST"])
+@sheet_bp.route("/connect/use-picked", methods=["POST"])
 @login_required
-def connect_discover():
-    """기본 이름의 시트를 검색만 한다. 연결은 사용자 확인 후 별도로 수행한다."""
-    try:
-        found = find_spreadsheet_by_name(get_credentials(), DEFAULT_SPREADSHEET_NAME)
-    except Exception as e:
-        return jsonify({"ok": False, "error": _friendly_sheet_error(e, "시트 검색에 실패했습니다")}), 502
-    if not found:
-        return jsonify({"ok": True, "found": False})
-    return jsonify({"ok": True, "found": True, **found})
+def connect_use_picked():
+    """Google Picker 에서 사용자가 직접 선택한 시트를 연결한다.
 
-
-@sheet_bp.route("/connect/use-found", methods=["POST"])
-@login_required
-def connect_use_found():
-    """검색된 시트를 사용자가 승인한 경우에만 연결한다."""
+    클라이언트가 보낸 값은 sheet_id 형식과 워크시트 이름 길이만 신뢰 경계로
+    사용하고, 실제 접근 권한·문서 존재·제목은 서버 자격증명의 Sheets API 로
+    재검증한다. 클라이언트가 보낸 제목은 저장하지 않는다 (task-2026-08-004 §6.3).
+    """
     data = request.get_json(silent=True) or {}
     sheet_id = (data.get("sheet_id") or "").strip()
-    if not sheet_id:
-        return jsonify({"ok": False, "error": "시트 ID가 누락되었습니다."}), 400
+    if not sheet_id or not _SHEET_ID_RE.fullmatch(sheet_id):
+        return jsonify({"ok": False, "error": "선택한 시트 정보가 올바르지 않습니다."}), 400
+    worksheet_name = (data.get("worksheet_name") or "").strip()
+    if len(worksheet_name) > _WORKSHEET_NAME_MAX:
+        return jsonify({"ok": False, "error": "워크시트 이름이 너무 깁니다."}), 400
     try:
-        info = _attach_spreadsheet(sheet_id, data.get("worksheet_name", ""), data.get("title", ""))
+        # sheet_title 을 비워 Sheets API 응답의 실제 제목을 저장한다.
+        info = _attach_spreadsheet(sheet_id, worksheet_name)
     except ConnectError as e:
         return jsonify({"ok": False, "error": e.user_message}), 400
     return jsonify({"ok": True, **info})

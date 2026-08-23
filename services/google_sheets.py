@@ -26,27 +26,6 @@ def extract_sheet_id(url: str) -> str | None:
     return match.group(1) if match else None
 
 
-def find_spreadsheet_by_name(credentials, name: str = DEFAULT_SPREADSHEET_NAME) -> dict | None:
-    """Google Drive에서 지정한 이름의 스프레드시트를 검색한다.
-
-    검색만 수행하며 연결은 하지 않는다. 찾지 못하면 None을 반환한다.
-    """
-    drive = build("drive", "v3", credentials=credentials)
-    escaped = name.replace("\\", "\\\\").replace("'", "\\'")
-    query = (
-        f"name='{escaped}'"
-        " and mimeType='application/vnd.google-apps.spreadsheet'"
-        " and trashed=false"
-    )
-    result = drive.files().list(
-        q=query, fields="files(id,name)", pageSize=1
-    ).execute()
-    files = result.get("files", [])
-    if not files:
-        return None
-    return {"sheet_id": files[0]["id"], "title": files[0].get("name", name)}
-
-
 def create_spreadsheet(credentials, doc_title: str, worksheet_name: str) -> dict:
     """새 구글 시트 문서를 생성하고 워크시트를 초기화. sheet_id와 sheet_url 반환."""
     service = _sheets_service(credentials)

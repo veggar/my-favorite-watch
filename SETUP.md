@@ -23,7 +23,8 @@ pip install -r requirements-dev.txt      # 실행 + 테스트(pytest)
 1. [Google Cloud Console](https://console.cloud.google.com)에서 프로젝트 생성 (예: `my-favorite-watch`)
 2. **API 및 서비스 → 라이브러리**에서 다음을 사용 설정
    - `Google Sheets API`
-   - `Google Drive API` (시트 검색용 · `drive.metadata.readonly`)
+   - `Google Drive API` (`drive.file` 파일 단위 접근 · 새 시트 생성)
+   - `Google Picker API` (Drive에서 시트 선택 UI · task-2026-08-004)
    - `Cloud Firestore API`
 
 ---
@@ -40,13 +41,22 @@ pip install -r requirements-dev.txt      # 실행 + 테스트(pytest)
    |----|----|
    | `openid`, `userinfo.email`, `userinfo.profile` | 로그인 · 사용자 식별 |
    | `spreadsheets` | 시트 읽기/쓰기 |
-   | `drive.metadata.readonly` | 기본 이름의 시트 검색 (최소 권한) |
+   | `drive.file` | 사용자가 Picker에서 선택하거나 앱이 생성한 파일에 대한 파일 단위 접근 (비민감) |
+
+   기존에 사용하던 `drive.metadata.readonly`(제한 범위)는 더 이상 요청하지
+   않는다. 코드 배포와 기존 사용자 재동의가 끝난 뒤 콘솔 데이터 액세스에서
+   제거한다 (task-2026-08-004 §10).
 
 > ⚠️ **테스트 모드에서는 Google이 refresh token을 7일 후 만료시킨다.**
 > 이 경우 `device_id` 기반 90일 자동 로그인 유지(PRD §4.2)가 일반 사용자에게
 > 동작하지 않는다. 일반 공개 전에 **프로덕션 게시 + 앱 검증**이 필요하다.
-> `spreadsheets` / `drive.metadata.readonly`는 민감 스코프이므로 검증 대상이며,
-> 통상 2~6주가 소요된다.
+> `spreadsheets`는 민감 스코프이므로 여전히 검증 대상이며(통상 2~6주),
+> `drive.file`은 비민감 범위라 별도 심사 대상이 아니다.
+
+> ℹ️ **기존 사용자 1회 재동의 (scope migration)**: 구버전 범위로 발급된
+> refresh token은 `scope_version` 미기록/구버전으로 판별되어 자동 복원이
+> 중단되고, 다음 접속 시 로그인 화면에서 새 범위(`drive.file`)로 한 번
+> 재동의하게 된다. 기존 시트 연결 정보(`users/{user_key}`)는 유지된다.
 
 4. 앱 검증 제출 시 **개인정보처리방침 링크**에 `{공개 주소}/privacy`를,
    **홈페이지 URL**에 서비스 주소를 입력한다. 라우트는 구현되어 있지만
@@ -75,8 +85,39 @@ pip install -r requirements-dev.txt      # 실행 + 테스트(pytest)
    > 운영 도메인은 `mfw.worldapex.studio`이며 Cloud Run 도메인 매핑으로 연결되어 있다.
    > 등록된 URI와 `REDIRECT_URI` 값이 한 글자라도 다르면 `redirect_uri_mismatch`가 발생한다.
 
-4. **승인된 자바스크립트 원본**에 `https://mfw.worldapex.studio` 등록
+4. **승인된 자바스크립트 원본** 등록 — Picker 의 GIS 토큰 발급에 필요하다
+   - 운영: `https://mfw.worldapex.studio`
+   - 로컬: `http://localhost:8090`
 5. **클라이언트 ID**와 **클라이언트 보안 비밀** 복사
+
+### 3.3 Google Picker 브라우저 API 키 (task-2026-08-004)
+
+`/connect` 의 "Drive에서 선택" 기능에 필요하다. 미설정 시 해당 탭이 숨겨지고
+URL 연결 · 새 시트 생성만 제공된다.
+
+1. **API 및 서비스 → 사용자 인증 정보 → API 키 만들기**
+2. 발급 직후 반드시 제한을 건다 (브라우저에 노출되는 공개 키이므로 필수):
+   - **애플리케이션 제한**: HTTP 리퍼러
+     - 운영 키: `https://mfw.worldapex.studio/*`
+     - 개발 키: `http://localhost:8090/*` (운영 키와 **분리 발급**)
+   - **API 제한**: `Google Picker API` 만 허용
+3. `.env` 의 `GOOGLE_PICKER_API_KEY` 에 넣는다. Secret Manager 대상은
+   아니지만, **제한 없는 키로는 배포하지 않는다** (배포 전 점검 체크리스트).
+4. Cloud 프로젝트 **번호**(Picker `setAppId()` 값)를
+   `GOOGLE_CLOUD_PROJECT_NUMBER` 에 넣는다.
+
+   ```bash
+   gcloud projects describe {PROJECT_ID} --format="value(projectNumber)"
+   ```
+
+수동 검증 (로컬 · 운영 공통):
+
+- [ ] `/connect` 에서 "Drive에서 선택" 클릭 → Google 동의(drive.file) → Picker 팝업 표시
+- [ ] Google Sheets 만 목록에 보이고 복수 선택이 불가능한지
+- [ ] 선택 → 서버 검증 후 연결 성공, 취소 → 연결 상태 변화 없음
+- [ ] 로그인 계정과 다른 Google 계정으로 선택 시 "시트 접근 권한이 없습니다" 안내
+- [ ] 팝업 차단 상태에서 안내 문구와 URL 연결 유도가 표시되는지
+- [ ] Picker 키 미설정 환경에서 URL 연결 · 새 시트 생성이 정상 동작하는지
 
 ---
 
@@ -105,6 +146,8 @@ cp .env.example .env
 | `REDIRECT_URI` | ✅ | `http://localhost:8090/auth/callback` | OAuth 콜백. 3.2에 등록한 값과 정확히 일치해야 한다. 운영은 `https://mfw.worldapex.studio/auth/callback` |
 | `APP_ENV` | | `production` | `development` 지정 시 HTTP 허용 · 디버그 로그 · 쿠키 Secure 해제 |
 | `TMDB_API_KEY` | | (빈 값) | 없으면 TMDb 보강 생략 |
+| `GOOGLE_PICKER_API_KEY` | | (빈 값) | Picker 전용 브라우저 API 키(3.3). 없으면 "Drive에서 선택" 탭 숨김. 리퍼러 + Picker API 제한 필수 |
+| `GOOGLE_CLOUD_PROJECT_NUMBER` | | (빈 값) | Picker `setAppId()` 용 Cloud 프로젝트 번호(3.3) |
 | `AUTH_FRESHNESS_HOURS` | | `12` | access token 계층의 신선도. 초과 시 세션에서 토큰을 폐기하고 Firestore refresh token으로 재발급한다. 미설정 시 `SESSION_LIFETIME_HOURS` 값을 사용한다 |
 | `SESSION_LIFETIME_HOURS` | | `12` | (구 변수) `AUTH_FRESHNESS_HOURS`의 폴백. 쿠키 수명은 90일 고정이며 이 값이 아니다 |
 | `TMDB_ENRICH_CHUNK` | | `15` | 한 요청에서 동기 보강할 항목 수. 늘리면 요청 시간이 길어져 타임아웃 위험이 커진다 |
@@ -566,6 +609,11 @@ gcloud firestore fields ttls update updated_at \
 - [ ] `device_sessions` TTL 정책이 `ACTIVE`인지 (10.3, 2026-08-21 적용 완료)
 - [ ] `csv_import_staging` TTL 정책이 `ACTIVE`인지 (10.3.2)
 - [ ] CSV/Excel 업로드 미리보기 직후 세션 쿠키를 디코드했을 때 `csv_import_data`(구 키)가 아니라 `csv_staging_id`만 있고, 파싱한 후기·줄거리 원문이 쿠키 어디에도 없는지
+- [ ] `/connect` 의 "Drive에서 선택" → Picker 표시 → 선택한 시트 연결 성공 (3.3 수동 검증 체크리스트)
+- [ ] Cloud Run 로그에 Picker 토큰 · `GOOGLE_PICKER_API_KEY` · 시트 ID 원문이 출력되지 않는지
+- [ ] 새 로그인의 동의 화면에 Drive 전체 권한이 아니라 "선택한 파일" 문구(drive.file)만 표시되는지
+- [ ] 기존 사용자(구 범위 refresh token)가 자동 복원 대신 재동의 경로로 이동하고, 재동의 후 시트 연결이 유지되는지
+- [ ] 재동의 완료 사용자 확산 후 콘솔 데이터 액세스에서 `drive.metadata.readonly` 제거 (task-2026-08-004 §10)
 
 ---
 

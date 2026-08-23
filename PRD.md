@@ -83,7 +83,15 @@
 ### 4.1 로그인 방식
 
 - Google OAuth 2.0 (PKCE 지원)
-- 필요 스코프: `openid`, `userinfo.email`, `userinfo.profile`, `spreadsheets`, `drive.metadata.readonly`
+- 필요 스코프: `openid`, `userinfo.email`, `userinfo.profile`, `spreadsheets`, `drive.file`
+- `drive.file`은 사용자가 Google Picker에서 직접 선택하거나 앱이 생성한
+  파일에만 접근하는 파일 단위(비민감) 범위다. Drive 전체 메타데이터를 읽는
+  `drive.metadata.readonly`는 요청하지 않는다 (task-2026-08-004).
+- OAuth 동의 범위 구성에는 `scope_version`(현재 2)을 두고 기기 세션 문서에
+  함께 저장한다. 구버전 범위로 발급된 refresh token은 삭제하지 않되 자동
+  복원을 중단하고, 사용자가 새 범위로 1회 재동의하도록 유도한다.
+- 재동의 요청 시 `include_granted_scopes=false`로 두어 이전에 승인한
+  제한 범위가 새 토큰에 다시 포함되지 않게 한다.
 
 ### 4.1.1 사용자 식별자
 
@@ -493,21 +501,32 @@
   로그인 이메일과 정확히 일치할 때만 한 번 이전한다.
 - 세션이 만료되어 재로그인한 경우에도 시트를 다시 설정하도록 요구하지 않는다
 
-#### 13.1.2 기본 시트 탐색 및 사용자 확인
+#### 13.1.2 Google Picker 로 시트 선택 (기본 권장 경로)
 
-- 저장된 연결 정보가 없으면 Google Drive에서 `My Favorite Watch` 이름의 스프레드시트를 검색한다
-- 검색 중에는 "기록을 저장할 구글 시트를 확인하고 있습니다." 메시지와 로딩 애니메이션을 표시한다
-- 검색되면 자동으로 연결하지 않고 사용자에게 확인을 요청한다
-  - 안내: "'My Favorite Watch' 시트를 찾았습니다. 이 시트로 연결할까요?"
-  - 선택지: "이 시트로 연결" / "직접 설정하기"
-- 검색되지 않으면 곧바로 수동 설정 단계로 이동한다
+- 저장된 연결 정보가 없으면 자동 Drive 검색 없이 세 가지 연결 방식을
+  명시적으로 제공한다: **Google Drive에서 선택** / **시트 URL 직접 입력** /
+  **새 시트 만들기**
+- "Google Drive에서 선택"은 Google Picker 를 사용한다.
+  - Picker 는 사용자 버튼 클릭 시에만 열리며, 이때 브라우저가 GIS Token
+    Model 로 `drive.file` 단일 범위의 단기 access token 을 발급받는다
+  - 이 토큰은 JavaScript 메모리에서 Picker 생성에만 사용하고 DOM ·
+    localStorage · sessionStorage · 쿠키 · URL · 서버 로그에 저장하지 않으며,
+    완료 · 취소 · 오류 후 참조를 제거한다
+  - 서버 세션의 복합 범위 access/refresh token 은 브라우저에 노출하지 않는다
+  - Google 스프레드시트 MIME 유형만 표시하고 한 번에 한 파일만 선택할 수 있다
+  - 취소하면 연결 상태를 변경하지 않는다
+  - 선택된 문서의 `id`만 서버(`POST /connect/use-picked`)에 전달하고, 서버가
+    Sheets API 로 접근 권한 · 문서 존재를 재검증한 뒤 **서버가 조회한 실제
+    제목**으로 저장한다 (클라이언트가 보낸 제목은 신뢰하지 않는다)
+- Picker 설정(`GOOGLE_PICKER_API_KEY` · `GOOGLE_CLOUD_PROJECT_NUMBER`)이
+  없거나 JavaScript 를 사용할 수 없는 환경에서는 "Drive에서 선택" 탭을
+  노출하지 않고 URL 직접 연결과 새 시트 생성만 제공한다
 
-#### 13.1.3 수동 설정 단계
+#### 13.1.3 URL 직접 연결 · 새 시트 생성
 
-- 사용자가 "직접 설정하기"를 선택했거나 기본 시트가 검색되지 않은 경우 진입한다
 - **기존 시트 연결**: Google Sheet URL 입력 → 접근 권한 확인 → `My Favorite Watch` 워크시트 자동 생성(없는 경우) → 세션에 저장
 - **새 시트 생성**: 문서명 + 워크시트명 입력 → Google Drive에 새 문서 생성 → 워크시트 + 헤더 자동 초기화
-- 기본 시트가 검색된 상태에서 진입한 경우 "이전" 버튼으로 확인 단계로 돌아갈 수 있다
+- 두 경로는 Picker 도입 전과 동일하게 유지된다 (Picker 실패 시의 대체 경로)
 
 #### 13.1.4 결과 처리
 
@@ -639,15 +658,24 @@
 | CSV 인코딩 불인식 | "UTF-8 또는 EUC-KR 파일 사용 안내" |
 | CSRF 검증 실패 | "잘못된 요청입니다. 페이지를 새로고침 후 다시 시도해주세요." 안내 |
 | 수정 충돌 | `updatedAt` 비교 후 최신 내용 확인 안내 |
+| Picker 취소 | 연결 상태를 변경하지 않고 선택 화면 유지 |
+| Picker 팝업 차단 | 팝업 허용 안내 + URL 직접 연결 유도 |
+| Picker 계정 불일치 (선택 계정 ≠ 로그인 계정) | 서버 재검증에서 403 → "시트 접근 권한이 없습니다" + 재선택/URL 연결 안내 |
+| Picker 설정 누락·스크립트 로드 실패 | "Drive에서 선택" 비활성, URL 직접 연결·새 시트 생성 탭으로 유도 |
 
 ---
 
 ## 18. 보안
 
 - Google OAuth 2.0 + PKCE 인증
-- OAuth 권한은 Drive 전체 읽기 대신 `drive.metadata.readonly`로 최소화
+- OAuth 권한은 파일 단위 선택 모델로 최소화: Drive 전체 메타데이터 검색 없이
+  사용자가 Picker에서 직접 선택하거나 앱이 생성한 파일에만 접근하는
+  `drive.file`(비민감 범위)만 사용
 - 외부 API 키 (TMDb, Google) 는 `.env` 서버 환경 변수 관리
-- 클라이언트에 API 키 미노출
+- 클라이언트에 API 키 미노출. 단, Picker 브라우저 API 키
+  (`GOOGLE_PICKER_API_KEY`)는 Picker 프로토콜상 브라우저에 노출되는 공개
+  식별자이므로 예외이며, HTTP 리퍼러 제한 + Google Picker API 제한을 전제로
+  한다 (제한 없는 키 배포 금지)
 - 운영 환경에서 `FLASK_SECRET_KEY` 미설정 시 앱 시작 실패
 - POST/PUT/PATCH/DELETE 요청 CSRF 토큰 검증
 - 세션 쿠키: HttpOnly, SameSite=Lax, 운영 환경 Secure

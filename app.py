@@ -38,6 +38,7 @@ from services.firestore_session import (  # noqa: E402
     upgrade_legacy_device as _upgrade_legacy_device,
 )
 from services.google_credentials import (  # noqa: E402
+    OAUTH_SCOPE_VERSION as _OAUTH_SCOPE_VERSION,
     build_credentials as _build_credentials,
     session_payload as _session_payload,
 )
@@ -186,6 +187,12 @@ def auto_restore_session():
         # 레거시 문서에 user_key 가 없다. 이메일로 사용자를 추정하지 않고
         # 재로그인을 요구한다(계정 혼입 방지).
         logger.info("device session without user_key; re-login required")
+        return
+    if ctx.get("scope_version", 1) < _OAUTH_SCOPE_VERSION:
+        # 구버전 OAuth 범위(drive.metadata.readonly 포함)로 발급된 refresh
+        # token 이다. 파괴적으로 삭제하지 않고 자동 복원만 중단해, 사용자가
+        # 새 범위(drive.file)로 1회 재동의하도록 유도한다 (task-2026-08-004 §6.5).
+        logger.info("device session has outdated oauth scope version; re-consent required")
         return
 
     try:

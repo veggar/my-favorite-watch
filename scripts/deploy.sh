@@ -83,6 +83,23 @@ if [ ${#MISSING_POLICY[@]} -gt 0 ]; then
   echo ""
 fi
 
+# Google Picker 설정 (task-2026-08-004)
+# 미설정이어도 배포는 가능하다 — /connect 에서 'Drive에서 선택' 탭이 숨겨지고
+# URL 연결·새 시트 생성만 제공된다. 단, 키를 넣을 때는 반드시
+# HTTP 리퍼러(https://mfw.worldapex.studio/*) + Google Picker API 제한을
+# 먼저 걸어야 한다 (.env.example 참조).
+GOOGLE_CLOUD_PROJECT_NUMBER="${GOOGLE_CLOUD_PROJECT_NUMBER:-}"
+if [ -z "${GOOGLE_PICKER_API_KEY}" ] || [ -z "${GOOGLE_CLOUD_PROJECT_NUMBER}" ]; then
+  echo "⚠️  GOOGLE_PICKER_API_KEY / GOOGLE_CLOUD_PROJECT_NUMBER 미설정."
+  echo "   'Google Drive에서 선택' 기능 없이 배포됩니다 (URL 연결·새 시트 생성은 정상)."
+  echo ""
+else
+  echo "ℹ️  Picker 브라우저 키가 설정되어 있습니다. 배포 전 다음을 확인하세요."
+  echo "   - 키에 HTTP 리퍼러 제한(운영 도메인/*)과 Google Picker API 제한이 걸려 있는가?"
+  echo "   - OAuth 클라이언트의 '승인된 JavaScript 원본'에 운영 도메인이 등록돼 있는가?"
+  echo ""
+fi
+
 echo "🚀 Cloud Run 배포 시작"
 echo "   프로젝트: $PROJECT"
 echo "   리전:     $REGION"
@@ -101,7 +118,7 @@ gcloud run deploy "$SERVICE" \
   --region "$REGION" \
   --project "$PROJECT" \
   --allow-unauthenticated \
-  --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET},FLASK_SECRET_KEY=${FLASK_SECRET_KEY},TMDB_API_KEY=${TMDB_API_KEY},REDIRECT_URI=${DEPLOY_REDIRECT_URI},APP_ENV=production,SERVICE_OPERATOR=${SERVICE_OPERATOR},PRIVACY_CONTACT_EMAIL=${PRIVACY_CONTACT_EMAIL},SERVICE_URL=${DEPLOY_SERVICE_URL},POLICY_EFFECTIVE_DATE=${POLICY_EFFECTIVE_DATE}" \
+  --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET},FLASK_SECRET_KEY=${FLASK_SECRET_KEY},TMDB_API_KEY=${TMDB_API_KEY},REDIRECT_URI=${DEPLOY_REDIRECT_URI},APP_ENV=production,SERVICE_OPERATOR=${SERVICE_OPERATOR},PRIVACY_CONTACT_EMAIL=${PRIVACY_CONTACT_EMAIL},SERVICE_URL=${DEPLOY_SERVICE_URL},POLICY_EFFECTIVE_DATE=${POLICY_EFFECTIVE_DATE},GOOGLE_PICKER_API_KEY=${GOOGLE_PICKER_API_KEY},GOOGLE_CLOUD_PROJECT_NUMBER=${GOOGLE_CLOUD_PROJECT_NUMBER}" \
   --set-secrets "USER_KEY_HMAC_SECRET=${USER_KEY_SECRET_NAME}:latest"
 
 echo ""

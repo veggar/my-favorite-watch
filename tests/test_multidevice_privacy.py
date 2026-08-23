@@ -184,7 +184,13 @@ def test_restore_context_prefers_new_structure(db):
 
     ctx = fs.restore_device_context("device-a")
 
-    assert ctx == {"user_key": USER_A, "refresh_token": "new-token", "source": "device"}
+    assert ctx == {
+        "user_key": USER_A,
+        "refresh_token": "new-token",
+        # task-2026-08-004: 현재 OAuth 범위 구성으로 저장된 문서
+        "scope_version": fs.OAUTH_SCOPE_VERSION,
+        "source": "device",
+    }
 
 
 def test_restore_context_falls_back_to_legacy(db):
