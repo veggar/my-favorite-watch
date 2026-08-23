@@ -19,9 +19,22 @@ SCOPES = [
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
     "https://www.googleapis.com/auth/spreadsheets",
-    # drive.readonly → metadata.readonly 로 최소 권한 원칙 적용
-    "https://www.googleapis.com/auth/drive.metadata.readonly",
+    # 파일 단위 접근(비민감 범위). 사용자가 Picker 에서 직접 선택하거나
+    # 앱이 생성한 파일에만 접근한다. Drive 전체 메타데이터를 읽는
+    # drive.metadata.readonly 는 task-2026-08-004 에서 제거했다.
+    "https://www.googleapis.com/auth/drive.file",
 ]
+
+# 브라우저 Picker 가 GIS Token Model 로 요청하는 단일 범위.
+# 서버 세션의 복합 범위 access token 은 브라우저에 노출하지 않는다.
+PICKER_SCOPE = "https://www.googleapis.com/auth/drive.file"
+
+# OAuth 동의 범위 구성의 버전 (task-2026-08-004 §6.5).
+#   v1: spreadsheets + drive.metadata.readonly (구버전, 기록 없음도 v1 취급)
+#   v2: spreadsheets + drive.file
+# 구버전 refresh token 은 삭제하지 않되 자동 복원을 중단해 1회 재동의를
+# 요청한다. 버전 값은 device_sessions 문서에 함께 저장된다.
+OAUTH_SCOPE_VERSION = 2
 
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 AUTH_URI = "https://accounts.google.com/o/oauth2/auth"

@@ -51,7 +51,10 @@ My Favorite Watch 운영자(이하 "운영자")는 이용자의 개인정보를 
 ## 3. Google API 정보의 이용과 저장
 
 - 서비스는 `openid`, `userinfo.email`, `userinfo.profile`, `spreadsheets`,
-  `drive.metadata.readonly` 권한을 요청합니다.
+  `drive.file` 권한을 요청합니다.
+- `drive.file` 권한은 이용자가 Google Picker에서 직접 선택하거나 서비스가
+  생성한 파일에만 적용됩니다. 서비스는 이용자의 Google Drive 전체 파일
+  목록이나 메타데이터를 조회하지 않습니다.
 - 이메일·이름·프로필 이미지는 로그인한 이용자에게 계정을 표시하기 위해 사용하며,
   Firestore `users` 또는 `device_sessions` 컬렉션에는 저장하지 않습니다.
 - Google Sheet 내용은 이용자가 요청한 조회·등록·수정·삭제·복구 기능을 수행할

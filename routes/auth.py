@@ -30,6 +30,7 @@ from services.firestore_session import (
     update_refresh_token,
 )
 from services.google_credentials import (
+    OAUTH_SCOPE_VERSION,
     SCOPES,
     TOKEN_URI,
     AUTH_URI,
@@ -146,9 +147,12 @@ def google_login():
         return _auth_failed("AUTH_HOST")
 
     flow = _build_flow()
+    # include_granted_scopes 는 반드시 "false" 로 둔다. "true" 면 기존 사용자가
+    # 재동의할 때 이전에 승인한 drive.metadata.readonly 가 새 토큰에 다시
+    # 포함되어 제한 범위 제거가 완료되지 않는다 (task-2026-08-004 §6.5).
     authorization_url, state = flow.authorization_url(
         access_type="offline",
-        include_granted_scopes="true",
+        include_granted_scopes="false",
         prompt="consent",
     )
     session["oauth_state"] = state
@@ -232,6 +236,8 @@ def auth_callback():
     session["device_id"] = device_id
     session["user_key"] = user_key
     session["user_key_version"] = USER_KEY_VERSION
+    # 이번 로그인이 어떤 OAuth 범위 구성으로 이뤄졌는지 기록 (task-2026-08-004)
+    session["oauth_scope_version"] = OAUTH_SCOPE_VERSION
     # access token 계층의 신선도 기준 시각(조치안 개정 2판 2.2)
     session["auth_at"] = auth_timestamp()
     # 표시용 이름 · 프로필 이미지는 검증된 ID Token 클레임에서 가져오며
@@ -259,7 +265,10 @@ def auth_callback():
         delete_device_session(device_id)
 
     if credentials.refresh_token:
-        if not save_device_session(device_id, user_key, credentials.refresh_token):
+        # 새 refresh token 은 현재 SCOPES(v2: drive.file)로 발급된 것이므로
+        # scope_version 을 함께 저장해 이후 자동 복원을 허용한다.
+        if not save_device_session(device_id, user_key, credentials.refresh_token,
+                                   OAUTH_SCOPE_VERSION):
             # 저장 실패로 로그인 자체를 막지는 않는다(조치안 9. 롤백 원칙).
             flash("자동 로그인 정보를 저장하지 못했습니다. 다음 접속 시 다시 로그인이 필요할 수 있습니다.", "error")
     else:

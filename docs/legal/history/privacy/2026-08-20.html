@@ -1,12 +1,85 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  {% include 'partials/head_meta.html' %}
+  
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="description" content="나의 영상 작품 기록 관리 — 본인 Google Sheet에 저장하는 감상 기록 서비스">
+<meta name="theme-color" content="#4f46e5">
+
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/static/icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/static/icons/favicon-16.png" sizes="16x16" type="image/png">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon-180.png">
+
+<meta name="application-name" content="My Favorite Watch">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="My Favorite Watch">
+
+<style>
+  /* 초기 로딩 표시 (ui-ux-standards §1) */
+  #boot-loading {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: #f9fafb;
+    opacity: 1;
+    transition: opacity .18s ease-out;
+  }
+  #boot-loading .boot-text {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    display: flex;
+    align-items: baseline;
+    gap: 2px;
+    font: 600 14px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #6b7280;
+  }
+  #boot-loading .boot-dots { display: inline-flex; gap: 2px; margin-left: 2px; }
+  #boot-loading .boot-dots i {
+    width: 3px; height: 3px; border-radius: 50%;
+    background: #6b7280;
+    animation: boot-dot 1.2s ease-in-out infinite;
+  }
+  #boot-loading .boot-dots i:nth-child(2) { animation-delay: .2s; }
+  #boot-loading .boot-dots i:nth-child(3) { animation-delay: .4s; }
+  @keyframes boot-dot {
+    0%, 60%, 100% { opacity: .2; }
+    30%           { opacity: 1; }
+  }
+  body.app-ready #boot-loading { opacity: 0; pointer-events: none; visibility: hidden; }
+  @media (prefers-reduced-motion: reduce) {
+    #boot-loading { transition: none; }
+    #boot-loading .boot-dots i { animation: none; opacity: .6; }
+  }
+</style>
   <title>개인정보처리방침 — My Favorite Watch</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body class="settings-page">
-{% include 'partials/boot_loading.html' %}
+
+<div id="boot-loading" role="status" aria-live="polite">
+  <span class="boot-text">Now Loading<span class="boot-dots" aria-hidden="true"><i></i><i></i><i></i></span></span>
+</div>
+<script>
+  // 스타일시트·스크립트가 모두 도착하면 표시를 걷는다.
+  (function () {
+    var done = false;
+    function ready() {
+      if (done) return;
+      done = true;
+      document.body.classList.add("app-ready");
+    }
+    if (document.readyState === "complete") ready();
+    else window.addEventListener("load", ready);
+    // 리소스 하나가 오래 걸려도 화면이 영구히 가려지지 않도록 상한을 둔다.
+    setTimeout(ready, 8000);
+  })();
+</script>
 
   <header class="app-header">
     <div class="header-left">
@@ -18,17 +91,10 @@
   </header>
 
   <main class="doc-container">
-    {% if not policy.is_complete %}
-    <div class="alert alert-error">
-      운영 주체 정보가 아직 설정되지 않았습니다. 아래 문서에 표시된
-      [운영 주체 미설정] 등 자리표시자는 실제 값이 채워지기 전까지 노출됩니다.
-      배포 전에 다음 환경 변수를 설정해주세요:
-      {% for m in policy.missing %}<code>{{ m.env }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.
-    </div>
-    {% endif %}
+    
 
     <h1 class="doc-title">My Favorite Watch 개인정보처리방침</h1>
-    <p class="doc-meta">시행일: {{ policy.effective_date }}</p>
+    <p class="doc-meta">시행일: 2026-08-20</p>
 
     <div class="doc-lead">
       My Favorite Watch 운영자(이하 "운영자")는 이용자의 개인정보를 중요하게
@@ -41,9 +107,9 @@
       <h2>1. 개인정보처리자</h2>
       <ul class="doc-list">
         <li>서비스명: My Favorite Watch</li>
-        <li>운영 주체(상호 또는 성명): {{ policy.operator }}</li>
-        <li>서비스 주소: {{ policy.service_url }}</li>
-        <li>문의 이메일: {{ policy.contact_email }}</li>
+        <li>운영 주체(상호 또는 성명): Seongjun Kim</li>
+        <li>서비스 주소: https://mfw.worldapex.studio</li>
+        <li>문의 이메일: veggar.dev@gmail.com</li>
       </ul>
     </section>
 
@@ -122,8 +188,7 @@
     <section class="doc-section">
       <h2>3. Google API 정보의 이용과 저장</h2>
       <ul class="doc-list">
-        <li>서비스는 <code>openid</code>, <code>userinfo.email</code>, <code>userinfo.profile</code>, <code>spreadsheets</code>, <code>drive.file</code> 권한을 요청합니다.</li>
-        <li><code>drive.file</code> 권한은 이용자가 Google Picker에서 직접 선택하거나 서비스가 생성한 파일에만 적용됩니다. 서비스는 이용자의 Google Drive 전체 파일 목록이나 메타데이터를 조회하지 않습니다.</li>
+        <li>서비스는 <code>openid</code>, <code>userinfo.email</code>, <code>userinfo.profile</code>, <code>spreadsheets</code>, <code>drive.metadata.readonly</code> 권한을 요청합니다.</li>
         <li>이메일·이름·프로필 이미지는 로그인한 이용자에게 계정을 표시하기 위해 사용하며, 서버 저장소에 원문으로 저장하지 않습니다.</li>
         <li>Google Sheet 내용은 이용자가 요청한 조회·등록·수정·삭제·복구 기능을 수행할 때만 접근합니다.</li>
         <li>Google API에서 받은 정보를 광고, 신용평가, 데이터 판매 또는 사람에 의한 일반적 열람 목적으로 사용하지 않습니다.</li>
@@ -221,7 +286,7 @@
         <li>시트 연결정보: 설정 화면의 "시트 연결 해제" 사용</li>
         <li>현재 기기 세션: "이 기기에서 로그아웃" 사용</li>
         <li>모든 기기 세션: "모든 기기에서 로그아웃" 사용</li>
-        <li>그 밖의 서버 저장정보 삭제: {{ policy.contact_email }}로 요청</li>
+        <li>그 밖의 서버 저장정보 삭제: veggar.dev@gmail.com로 요청</li>
       </ul>
       <p class="doc-note">
         서비스는 별도의 연령 제한을 두지 않으며, Google 계정을 보유한 누구나
@@ -260,7 +325,7 @@
     <section class="doc-section">
       <h2>11. 개인정보 관련 문의 및 권익침해 구제</h2>
       <ul class="doc-list">
-        <li>문의 이메일: {{ policy.contact_email }}</li>
+        <li>문의 이메일: veggar.dev@gmail.com</li>
       </ul>
       <p>개인정보 침해에 관한 상담이나 신고가 필요한 경우 다음 기관에 문의할 수 있습니다.</p>
       <ul class="doc-list">
@@ -276,17 +341,14 @@
         알립니다. 이용자의 권리에 중대한 영향을 주는 변경은 개정 전 또는
         개정 즉시 별도로 안내하고, 이전 버전을 확인할 수 있도록 보관합니다.
       </p>
-      <p class="doc-meta">시행일: {{ policy.effective_date }}</p>
+      <p class="doc-meta">시행일: 2026-08-20</p>
     </section>
 
     <nav class="doc-footer">
-      <a href="{{ url_for('site.terms') }}">이용약관</a>
+      <a href="/terms">이용약관</a>
       <span aria-hidden="true">·</span>
-      <a href="{{ url_for('auth.login') }}">로그인</a>
-      {% if history_versions %}
-      <span aria-hidden="true">·</span>
-      <a href="{{ url_for('site.policy_history_list', doc_type='privacy') }}">이전 버전</a>
-      {% endif %}
+      <a href="/login">로그인</a>
+      
     </nav>
   </main>
 </body>

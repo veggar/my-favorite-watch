@@ -20,6 +20,12 @@
     .setup-actions .btn { min-width: 130px; }
     .setup-error-text { color: #c0392b; font-weight: 500; }
     .setup-left { text-align: left; }
+    .picker-hint { font-size: 13px; color: #777; margin-top: 10px; line-height: 1.5; }
+    .picker-inline-error {
+      display: none; margin-top: 12px; padding: 10px 12px;
+      border: 1px solid #e6b8b3; border-radius: 8px; background: #fdf3f2;
+      color: #c0392b; font-size: 13px; line-height: 1.5; text-align: left;
+    }
   </style>
 </head>
 <body class="connect-page">
@@ -37,35 +43,40 @@
     <div class="alert alert-error">{{ error }}</div>
     {% endif %}
 
-    {# 1. 저장된/기본 시트 탐색 #}
-    <div id="step-loading" class="setup-step">
-      <div class="setup-spinner"></div>
-      <p class="setup-text">기록을 저장할 구글 시트를<br>확인하고 있습니다.</p>
-    </div>
-
-    {# 2. 기본 시트 발견 → 사용 여부 확인 #}
-    <div id="step-found" class="setup-step" style="display:none;">
-      <div class="setup-icon">🔍</div>
-      <p class="setup-text">
-        "<span id="found-title">{{ default_spreadsheet }}</span>" 시트를 찾았습니다.<br>이 시트로 연결할까요?
-      </p>
-      <div class="setup-actions">
-        <button type="button" class="btn btn-primary" id="btn-use-found">이 시트로 연결</button>
-        <button type="button" class="btn" id="btn-manual-from-found">직접 설정하기</button>
-      </div>
-    </div>
-
-    {# 3. 수동 설정 — 기존 URL 입력 / 새로 만들기 플로우 #}
-    <div id="step-manual" style="display:none;">
-      <p class="connect-desc" id="manual-intro">연결할 구글 시트를 직접 설정해주세요.</p>
+    {# 1. 연결 방법 선택 — 자동 Drive 검색 없이 세 가지 방식을 명시적으로 제공 #}
+    <div id="step-manual">
+      <p class="connect-desc" id="manual-intro">기록을 저장할 구글 시트를 연결해주세요.</p>
 
       <div class="tab-bar" id="tab-bar">
-        <button type="button" class="tab-btn active" data-tab="connect">기존 시트 연결</button>
+        {% if picker.enabled %}
+        <button type="button" class="tab-btn active" data-tab="drive">Drive에서 선택</button>
+        <button type="button" class="tab-btn" data-tab="connect">URL로 연결</button>
+        {% else %}
+        <button type="button" class="tab-btn active" data-tab="connect">URL로 연결</button>
+        {% endif %}
         <button type="button" class="tab-btn" data-tab="create">새 시트 만들기</button>
       </div>
 
-      <!-- 기존 시트 연결 -->
-      <div id="tab-connect" class="tab-content setup-left">
+      {% if picker.enabled %}
+      <!-- Google Drive에서 선택 (Google Picker) -->
+      <div id="tab-drive" class="tab-content setup-left">
+        <p class="connect-desc">내 Google Drive에서 사용할 스프레드시트를 직접 선택하세요.<br>
+          선택한 파일에만 접근 권한이 부여됩니다.</p>
+        <div class="form-group">
+          <label class="form-label">워크시트 이름</label>
+          <input type="text" id="drive-worksheet-name" class="form-input"
+            value="{{ default_worksheet }}" placeholder="{{ default_worksheet }}" maxlength="100">
+          <p class="form-hint">데이터를 저장할 워크시트(탭) 이름입니다. 없으면 자동 생성됩니다.</p>
+        </div>
+        <button type="button" class="btn btn-primary btn-full" id="btn-open-picker">Google Drive에서 선택</button>
+        <div class="picker-inline-error" id="picker-error" role="alert"></div>
+        <p class="picker-hint">팝업이 차단되어 있거나 선택이 어려운 경우,
+          "URL로 연결" 탭에서 시트 주소를 직접 입력할 수 있습니다.</p>
+      </div>
+      {% endif %}
+
+      <!-- 기존 시트 URL로 연결 -->
+      <div id="tab-connect" class="tab-content setup-left" {% if picker.enabled %}style="display:none;"{% endif %}>
         <p class="connect-desc">연결할 Google Sheet URL을 입력하세요.<br>
           지정한 워크시트가 없으면 자동으로 생성됩니다.</p>
         <form method="post" action="{{ url_for('sheet.connect') }}" class="connect-form" id="form-connect">
@@ -105,20 +116,22 @@
           <button type="submit" class="btn btn-primary btn-full">새 시트 만들기</button>
         </form>
       </div>
-
-      <div class="setup-actions" id="manual-back-wrap" style="display:none;">
-        <button type="button" class="btn" id="btn-back-to-found">이전</button>
-      </div>
     </div>
 
-    {# 4. 성공 → 잠시 후 목록으로 자동 이동 #}
+    {# 2. 서버 검증 진행 중 #}
+    <div id="step-loading" class="setup-step" style="display:none;">
+      <div class="setup-spinner"></div>
+      <p class="setup-text" id="loading-msg">시트 연결을 확인하고 있습니다.</p>
+    </div>
+
+    {# 3. 성공 → 잠시 후 목록으로 자동 이동 #}
     <div id="step-success" class="setup-step" style="display:none;">
       <div class="setup-icon">✅</div>
       <p class="setup-text" id="success-msg"></p>
       <p class="setup-sub">잠시 후 목록 화면으로 이동합니다.</p>
     </div>
 
-    {# 5. 실패 → 오류 표시 후 재시도/이전 대기 #}
+    {# 4. 실패 → 오류 표시 후 재시도/이전 대기 #}
     <div id="step-error" class="setup-step" style="display:none;">
       <div class="setup-icon">⚠️</div>
       <p class="setup-text setup-error-text" id="error-msg"></p>
@@ -136,14 +149,25 @@
     </div>
   </div>
 
+  {% if picker.enabled %}
+  {# Picker 공개 설정값 — API 키는 리퍼러·API 제한이 걸린 공개 식별자이며,
+     서버 세션 토큰은 절대 포함하지 않는다 (task-2026-08-004 §4.2) #}
+  <script type="application/json" id="picker-config">{{ {
+    "client_id": picker.client_id,
+    "api_key": picker.api_key,
+    "project_number": picker.project_number,
+    "scope": picker.scope
+  } | tojson }}</script>
+  <script src="{{ url_for('static', filename='js/google-picker.js') }}" defer></script>
+  {% endif %}
+
   <script>
     (function () {
-      var STEPS = ['step-loading', 'step-found', 'step-manual', 'step-success', 'step-error'];
+      var STEPS = ['step-manual', 'step-loading', 'step-success', 'step-error'];
       var LIST_URL = {{ url_for('main.index') | tojson }};
       var SUCCESS_REDIRECT_MS = 1200;
-      var foundSheet = null;   // {sheet_id, title}
       var lastAction = null;   // "다시 시도"가 재실행할 동작
-      var backStep = null;     // "이전"으로 돌아갈 단계
+      var backStep = 'step-manual';
 
       function el(id) { return document.getElementById(id); }
 
@@ -170,11 +194,9 @@
         });
       }
 
-      function fail(message, retryFn, back) {
+      function fail(message, retryFn) {
         lastAction = retryFn;
-        backStep = back || null;
         el('error-msg').innerText = message || '알 수 없는 오류가 발생했습니다.';
-        el('btn-error-back').style.display = backStep ? '' : 'none';
         show('step-error');
       }
 
@@ -184,11 +206,6 @@
         setTimeout(function () { window.location.href = LIST_URL; }, SUCCESS_REDIRECT_MS);
       }
 
-      function showManual(canGoBack) {
-        el('manual-back-wrap').style.display = canGoBack ? '' : 'none';
-        show('step-manual');
-      }
-
       function switchTab(name) {
         document.querySelectorAll('#step-manual .tab-content').forEach(function (c) {
           c.style.display = 'none';
@@ -196,86 +213,104 @@
         document.querySelectorAll('#tab-bar .tab-btn').forEach(function (b) {
           b.classList.toggle('active', b.getAttribute('data-tab') === name);
         });
-        el('tab-' + name).style.display = 'block';
-      }
-
-      // 1단계: 기본 이름의 시트 검색 (자동 연결하지 않음)
-      function discover() {
-        show('step-loading');
-        post('/connect/discover')
-          .then(function (data) {
-            if (!data.ok) { fail(data.error, discover, null); return; }
-            if (data.found) {
-              foundSheet = { sheet_id: data.sheet_id, title: data.title };
-              el('found-title').innerText = data.title;
-              show('step-found');
-            } else {
-              el('manual-intro').innerText =
-                '연결할 수 있는 시트를 찾지 못했습니다. 직접 설정하거나 새로 만들어주세요.';
-              showManual(false);
-            }
-          })
-          .catch(function () { fail('네트워크 오류가 발생했습니다.', discover, null); });
-      }
-
-      function useFound() {
-        if (!foundSheet) { discover(); return; }
-        show('step-loading');
-        post('/connect/use-found', foundSheet)
-          .then(function (data) {
-            if (data.ok) { succeed(data.title || foundSheet.title); }
-            else { fail(data.error, useFound, 'step-found'); }
-          })
-          .catch(function () { fail('네트워크 오류가 발생했습니다.', useFound, 'step-found'); });
+        var tab = el('tab-' + name);
+        if (tab) { tab.style.display = 'block'; }
       }
 
       function connectByUrl() {
         var form = el('form-connect');
         var url = (form.sheet_url.value || '').trim();
         var ws = (form.worksheet_name.value || '').trim();
-        if (!url) { fail('올바른 Google Sheet URL을 입력해주세요.', null, 'step-manual'); return; }
+        if (!url) { fail('올바른 Google Sheet URL을 입력해주세요.', null); return; }
+        el('loading-msg').innerText = '시트 연결을 확인하고 있습니다.';
         show('step-loading');
         post('/connect/by-url', { sheet_url: url, worksheet_name: ws })
           .then(function (data) {
             if (data.ok) { succeed(data.title); }
-            else { fail(data.error, connectByUrl, 'step-manual'); }
+            else { fail(data.error, connectByUrl); }
           })
-          .catch(function () { fail('네트워크 오류가 발생했습니다.', connectByUrl, 'step-manual'); });
+          .catch(function () { fail('네트워크 오류가 발생했습니다.', connectByUrl); });
       }
 
       function createSheet() {
         var form = el('form-create');
         var title = (form.doc_title.value || '').trim();
         var ws = (form.worksheet_name.value || '').trim();
+        el('loading-msg').innerText = '새 시트를 만들고 있습니다.';
         show('step-loading');
         post('/connect/create', { doc_title: title, worksheet_name: ws })
           .then(function (data) {
             if (data.ok) { succeed(data.title); }
-            else { fail(data.error, createSheet, 'step-manual'); }
+            else { fail(data.error, createSheet); }
           })
-          .catch(function () { fail('네트워크 오류가 발생했습니다.', createSheet, 'step-manual'); });
+          .catch(function () { fail('네트워크 오류가 발생했습니다.', createSheet); });
       }
 
       document.querySelectorAll('#tab-bar .tab-btn').forEach(function (b) {
         b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); });
       });
-      el('btn-use-found').addEventListener('click', useFound);
-      el('btn-manual-from-found').addEventListener('click', function () { showManual(true); });
-      el('btn-back-to-found').addEventListener('click', function () { show('step-found'); });
       el('form-connect').addEventListener('submit', function (e) { e.preventDefault(); connectByUrl(); });
       el('form-create').addEventListener('submit', function (e) { e.preventDefault(); createSheet(); });
       el('btn-retry').addEventListener('click', function () {
-        if (lastAction) { lastAction(); } else { discover(); }
+        if (lastAction) { lastAction(); } else { show('step-manual'); }
       });
-      el('btn-error-back').addEventListener('click', function () {
-        if (backStep === 'step-manual') { showManual(!!foundSheet); }
-        else if (backStep) { show(backStep); }
-        else { discover(); }
-      });
+      el('btn-error-back').addEventListener('click', function () { show(backStep); });
 
-      // 폼 폴백으로 전달된 오류가 있으면 탐색을 건너뛰고 수동 화면부터 보여준다.
-      if (document.querySelector('.alert-error')) { showManual(false); }
-      else { discover(); }
+      // ── Google Picker (설정된 경우에만) ────────────────────────────────
+      var pickerBtn = el('btn-open-picker');
+      if (pickerBtn) {
+        var configEl = el('picker-config');
+        var pickerConfig = null;
+        try { pickerConfig = JSON.parse(configEl.textContent); } catch (e) { pickerConfig = null; }
+
+        var showPickerError = function (msg) {
+          var box = el('picker-error');
+          box.innerText = msg;
+          box.style.display = 'block';
+        };
+
+        var usePicked = function (doc) {
+          var ws = (el('drive-worksheet-name').value || '').trim();
+          el('loading-msg').innerText = '선택한 시트를 확인하고 있습니다.';
+          show('step-loading');
+          // 제목은 서버가 Sheets API 로 다시 조회하므로 sheet_id 만 보낸다.
+          post('/connect/use-picked', { sheet_id: doc.id, worksheet_name: ws })
+            .then(function (data) {
+              if (data.ok) { succeed(data.title); }
+              else { fail(data.error, function () { usePicked(doc); }); }
+            })
+            .catch(function () {
+              fail('네트워크 오류가 발생했습니다.', function () { usePicked(doc); });
+            });
+        };
+
+        pickerBtn.addEventListener('click', function () {
+          el('picker-error').style.display = 'none';
+          if (!(window.MFWPicker && pickerConfig)) {
+            showPickerError('Google Drive 선택 기능을 불러오지 못했습니다. URL로 연결을 이용해주세요.');
+            return;
+          }
+          pickerBtn.disabled = true;
+          window.MFWPicker.open(pickerConfig, {
+            onPicked: function (doc) {
+              pickerBtn.disabled = false;
+              if (!doc.id) {
+                showPickerError('선택한 파일 정보를 읽지 못했습니다. 다시 시도해주세요.');
+                return;
+              }
+              usePicked(doc);
+            },
+            onCancel: function () {
+              // 취소는 연결 상태를 변경하지 않는다 — 선택 화면 유지.
+              pickerBtn.disabled = false;
+            },
+            onError: function (msg) {
+              pickerBtn.disabled = false;
+              showPickerError(msg);
+            }
+          });
+        });
+      }
     })();
   </script>
 </body>

@@ -31,6 +31,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import session
 
+from services.google_credentials import OAUTH_SCOPE_VERSION
 from services.user_identity import USER_KEY_VERSION
 
 logger = logging.getLogger(__name__)
@@ -153,7 +154,8 @@ def delete_user(user_key: str) -> bool:
 
 # ── 기기별 세션: device_sessions/{device_id} ───────────────────────────────
 
-def save_device_session(device_id: str, user_key: str, refresh_token: str) -> bool:
+def save_device_session(device_id: str, user_key: str, refresh_token: str,
+                        scope_version: int = OAUTH_SCOPE_VERSION) -> bool:
     if _db is None or not device_id or not user_key or not refresh_token:
         return False
     payload = {
@@ -163,6 +165,9 @@ def save_device_session(device_id: str, user_key: str, refresh_token: str) -> bo
         "expires_at": _expires_at(),
         "schema_version": SCHEMA_VERSION,
         "user_key_version": USER_KEY_VERSION,
+        # 이 refresh token 이 어떤 OAuth 범위 구성으로 발급됐는지 기록한다.
+        # 구버전 토큰은 자동 복원을 중단하고 재동의를 요청한다 (task-2026-08-004).
+        "scope_version": scope_version,
     }
     try:
         ref = _db.collection(DEVICE_SESSIONS_COLLECTION).document(device_id)
@@ -280,15 +285,18 @@ def delete_all_device_sessions(user_key: str) -> int:
 def restore_device_context(device_id: str) -> dict | None:
     """device_id 로 자동 복원에 필요한 최소 정보를 조회한다.
 
-    반환: {"user_key", "refresh_token", "source": "device" | "legacy"}
+    반환: {"user_key", "refresh_token", "scope_version",
+           "source": "device" | "legacy"}
     `source == "legacy"` 인 경우 호출부가 갱신 성공 후
     `upgrade_legacy_device()` 로 신규 구조 이전을 마무리한다.
+    `scope_version` 미기록 문서는 구버전(1)으로 취급한다.
     """
     data = get_device_session(device_id)
     if data and data.get("refresh_token"):
         return {
             "user_key": data.get("user_key", ""),
             "refresh_token": data["refresh_token"],
+            "scope_version": int(data.get("scope_version") or 1),
             "source": "device",
         }
     legacy = _get_legacy_document(device_id)
@@ -297,6 +305,8 @@ def restore_device_context(device_id: str) -> dict | None:
             # 다른 기기의 로그인 과정에서 user_key 가 이미 기록됐을 수 있다.
             "user_key": legacy.get("user_key", ""),
             "refresh_token": legacy["refresh_token"],
+            # 레거시 문서에는 scope_version 이 없다 → 구버전 취급.
+            "scope_version": int(legacy.get("scope_version") or 1),
             "source": "legacy",
         }
     return None
