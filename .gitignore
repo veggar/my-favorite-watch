@@ -11,3 +11,4 @@ build/
 venv/
 flask_session/
 .pytest_cache/
+artifacts/
