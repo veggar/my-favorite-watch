@@ -1,14 +1,10 @@
-@../agent-hub/.claude/AGENTS.md
-@PRD.md
-@.claude/AGENTS.md
-@.claude/rules/coding.md
-@.claude/rules/security.md
-@.claude/rules/tech-stack.md
-@.claude/rules/ui-ux-standards.md
-
 # My Favorite Watch
 
-이 문서는 프로젝트 특화 보완 지침만 관리한다. 전역 지침, 공통 agent, 공통 command, 공통 rules는 `@../agent-hub/.claude/AGENTS.md`를 기준으로 따른다.
+## 공통 지침
+
+- 작업을 시작할 때 [agent-hub 공통 지침](../agent-hub/AGENTS.md)을 직접 열어 읽고 현재 작업에 적용한다.
+- 프로젝트의 `PRD.md`, `.claude/AGENTS.md`, `.claude/rules/*.md`도 함께 확인한다.
+- 이 문서는 프로젝트 특화 보완 지침이다. 공통 지침과 충돌하면 충돌 내용을 보고하고 임의로 한쪽을 생략하지 않는다.
 
 ## Core Directives
 
@@ -22,7 +18,7 @@
 - 비즈니스 로직과 기능 정의는 `PRD.md`를 기준으로 확인한다.
 - Google 로그인, Google Sheets 연동, TMDb 연동, CSV 가져오기, 목록/검색/정렬/필터, 등록/수정/삭제 흐름의 데이터 정합성을 우선한다.
 - 민감한 인증 정보, OAuth 토큰, 세션, Google API 권한 변경은 보안 지침과 실제 OAuth 흐름을 함께 검토한다.
-- 프로젝트 로컬 세부 지침은 이 문서 상단의 로컬 import를 통해 함께 로드한다.
+- 프로젝트 로컬 세부 지침은 위 공통 지침과 함께 직접 읽어 적용한다.
 
 ## 버전 관리
 
