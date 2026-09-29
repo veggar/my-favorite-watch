@@ -27,6 +27,32 @@ pip install -r requirements-dev.txt      # 실행 + 테스트(pytest)
    - `Google Picker API` (Drive에서 시트 선택 UI · task-2026-08-004)
    - `Cloud Firestore API`
 
+### 2.1 신규 프로젝트의 Firebase Hosting 사이트 생성
+
+2026-10-15 이후 생성한 Firebase 프로젝트는 프로젝트 생성 또는 기존 Google Cloud
+프로젝트에 Firebase를 추가할 때 기본 Hosting 사이트가 자동으로 만들어지지 않는다.
+신규 프로젝트·재해복구 프로젝트·교체 프로젝트에서는 첫 Hosting 배포 전에 사이트를
+명시적으로 확인하고, 없을 때만 생성한다. 기존 운영 사이트를 다시 만들거나 삭제하지 않는다.
+기존 Google Cloud 프로젝트가 `firebase projects:list`에 없으면 먼저 Firebase 콘솔 또는
+`firebase projects:addfirebase "$PROJECT_ID"`로 Firebase 리소스를 추가한다.
+
+```bash
+PROJECT_ID=my-favorite-watch
+SITE_ID="$PROJECT_ID"
+
+firebase hosting:sites:list --project="$PROJECT_ID"
+
+# 목록에 기본 사이트가 없을 때만 실행한다.
+firebase hosting:sites:create "$SITE_ID" --project="$PROJECT_ID"
+```
+
+- CI/CD 서비스 계정에는 `firebasehosting.sites.create` 권한이 있어야 한다.
+- 사이트 ID는 Firebase 전체에서 고유하다. 프로젝트 ID를 사용할 수 없으면 고유한
+  `SITE_ID`를 정하고 `.web.app` 주소, DNS, OAuth 승인 URI, 운영 문서를 함께 갱신한다.
+- 비대화형(Non-interactive) 배포는 사이트를 자동 생성한다고 가정하지 않는다.
+- Firebase 콘솔에서만 사이트를 만들고 관리하는 경우에는 위 CLI 생성 단계가 필요 없다.
+- 참고: [Firebase Hosting REST 배포 절차](https://firebase.google.com/docs/hosting/api-deploy)
+
 ---
 
 ## 3. OAuth 동의 화면 · 클라이언트 ID
@@ -374,6 +400,39 @@ DNS(Porkbun): `mfw` → CNAME `my-favorite-watch.web.app`
 
 Cloud Run 배포와 Hosting 배포는 독립이다. 서비스 이름·리전이 그대로면
 Cloud Run만 배포하면 된다.
+
+### 9.0.1 Cloud Build 작업자 VM 릴리스 채널
+
+`gcloud run deploy --source .`는 이 저장소의 `Dockerfile`을 Cloud Build에서 빌드한다.
+Cloud Build 작업자 VM의 기본값은 2027-03-28에 `legacy`에서 `regular` 채널로
+바뀐다. 채널은 호스트 Docker·Debian 버전에만 적용되며, `Dockerfile`의 기본 이미지와
+컨테이너 내부 Python 패키지 버전은 별도로 관리한다.
+
+기본값 전환 전에 같은 커밋을 `legacy`와 `regular`로 각각 비운영 이미지로 빌드하고,
+빌드 성공·경고·소요 시간·이미지 기동을 비교한다. 아래 명령은 Cloud Build 비용과
+Artifact Registry 이미지 쓰기가 발생하므로 실행 승인을 받은 뒤 사용한다.
+
+```bash
+PROJECT_ID=my-favorite-watch
+REGION=asia-northeast3
+REVISION="$(git rev-parse --short HEAD)"
+IMAGE_BASE="${REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/my-favorite-watch"
+
+gcloud builds submit . --project="$PROJECT_ID" --region="$REGION" \
+  --tag="${IMAGE_BASE}:worker-legacy-${REVISION}" --worker-release=legacy
+gcloud builds submit . --project="$PROJECT_ID" --region="$REGION" \
+  --tag="${IMAGE_BASE}:worker-regular-${REVISION}" --worker-release=regular
+```
+
+- `regular` 검증이 통과하면 보안 업데이트 주기가 짧은 `regular`를 기본 선택으로 기록한다.
+- `stable`은 실제 호환성 문제가 있어 추가 검증 기간이 필요할 때만 사용한다.
+- 현재 `gcloud run deploy --source` 흐름은 채널을 명시하지 않으므로 기본 채널을 따른다.
+  채널을 지속적으로 고정해야 하면 `cloudbuild.yaml`의
+  `options.workerRelease`로 이미지를 먼저 빌드하고 `gcloud run deploy --image`로
+  배포하는 2단계 흐름으로 전환한다. 이 전환은 별도 변경·검증 대상으로 처리한다.
+- 테스트 이미지를 운영 서비스에 배포하지 않는다. 이미지 기동 검증은 별도 테스트
+  서비스에서 수행하고 OAuth·Firestore 운영 데이터를 사용하지 않는다.
+- 참고: [Cloud Build 릴리스 채널](https://docs.cloud.google.com/build/docs/release-channels)
 
 ### 9.1 커스텀 도메인 (`mfw.worldapex.studio`)
 

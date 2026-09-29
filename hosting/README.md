@@ -42,6 +42,27 @@ Cloud Run 배포(`scripts/deploy.sh`)와 Hosting 배포는 **서로 독립**이�
 Cloud Run 리비전이 바뀌어도 서비스 이름과 리전이 그대로면 Hosting을 다시
 배포할 필요가 없다. `serviceId`나 `region`을 바꾼 경우에만 재배포한다.
 
+### 신규 프로젝트 최초 배포
+
+2026-10-15 이후 생성한 Firebase 프로젝트에는 기본 Hosting 사이트가 자동 생성되지
+않는다. 신규 프로젝트·재해복구 프로젝트·교체 프로젝트의 첫 배포에서는 사이트 목록을
+먼저 확인하고, 없을 때만 명시적으로 생성한다.
+
+```bash
+PROJECT_ID=my-favorite-watch
+SITE_ID="$PROJECT_ID"
+
+firebase hosting:sites:list --project="$PROJECT_ID"
+
+# 목록에 기본 사이트가 없을 때만 실행한다.
+firebase hosting:sites:create "$SITE_ID" --project="$PROJECT_ID"
+```
+
+비대화형(Non-interactive) 배포가 사이트를 자동 생성한다고 가정하지 않는다. CI/CD
+서비스 계정에는 `firebasehosting.sites.create` 권한이 필요하다. `SITE_ID`가 이미
+다른 프로젝트에서 사용 중이면 고유한 값을 정하고 `.web.app` 주소, DNS, OAuth 승인
+URI를 함께 갱신한다. 기존 운영 사이트에는 생성 명령을 다시 실행하지 않는다.
+
 ```bash
 cd ~/worldapex-hosting/my-favorite-watch     # 실제 배포 디렉터리
 cp /path/to/repo/hosting/firebase.json .     # 구성 변경 시에만
