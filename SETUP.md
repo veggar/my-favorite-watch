@@ -474,13 +474,22 @@ gcloud builds submit . --project="$PROJECT_ID" --region="$REGION" \
 않는다. 어느 브랜치를 checkout 해서 `scripts/deploy.sh`를 실행하느냐로 운영 화면이
 정해진다. 배포 출력의 `소스:`·`테스트 참여 campaign:` 줄로 확인한다.
 
+**브랜치 배포 전에** 지금 traffic을 받는 revision을 "안전한 revision"으로 기록한다
+(이름·image digest·환경 변수·secret 참조·traffic 비율). 롤백 B의 대상이다.
+
+```bash
+gcloud run services describe my-favorite-watch --region asia-northeast3 \
+  --format='value(status.traffic)'
+gcloud run revisions describe <안전한 revision> --region asia-northeast3
+```
+
 | 동작 | 방법 | 재빌드 | 결과 |
 |---|---|---|---|
 | 변경 반영 | 브랜치 checkout, `.env`에 승인된 `COLOR_WORLD_APP_CAMPAIGN_ID` → `bash scripts/deploy.sh` | 예 | 버튼 노출 |
-| 롤백 A (기본) | `master` checkout → `bash scripts/deploy.sh` | 예 | `master` 코드, `--set-env-vars` 전체 교체로 변수 제거 → 버튼 없음 |
-| 롤백 B (가장 빠름) | 직전 revision으로 traffic 이동 (아래) | 아니오 | 직전 revision 그대로 |
+| 롤백 A (소스 재배포 복구) | `master` checkout → `bash scripts/deploy.sh` | 예 (빌드·배포 수 분) | `master` 코드, `--set-env-vars` 전체 교체로 변수 제거 → 버튼 없음 |
+| 롤백 B (빠른 traffic 롤백) | 배포 전에 기록한 안전한 revision으로 traffic 100% | 아니오 | 그 revision 그대로. traffic이 그 revision에 고정된다 |
 | campaign ID 변경 | `--update-env-vars` (아래) | 아니오 (같은 image로 새 revision) | 링크 ID만 변경 |
-| 버튼만 숨김 | `--remove-env-vars` (아래) | 아니오 | 버튼 없음, 브랜치 코드 유지 |
+| 버튼만 숨김 | `--remove-env-vars` (아래) | 아니오 (새 revision) | 버튼 없음, 브랜치 코드 유지 |
 
 ```bash
 # campaign ID 변경 / 버튼만 숨김 — 브랜치 revision이 서비스 중일 때만
@@ -489,12 +498,21 @@ gcloud run services update my-favorite-watch --region asia-northeast3 \
 gcloud run services update my-favorite-watch --region asia-northeast3 \
   --remove-env-vars COLOR_WORLD_APP_CAMPAIGN_ID
 
-# 롤백 B — 직전 revision 확인 후 traffic 이동
-gcloud run revisions list --service my-favorite-watch --region asia-northeast3
+# 롤백 B — 배포 전에 기록한 안전한 revision으로 이동
 gcloud run services update-traffic my-favorite-watch --region asia-northeast3 \
-  --to-revisions <직전 revision>=100
-# 이후 새 배포가 traffic을 받게 하려면 고정을 푼다
-gcloud run services update-traffic my-favorite-watch --region asia-northeast3 --to-latest
+  --to-revisions <안전한 revision>=100
+```
+
+롤백 B 뒤 traffic 복귀 (자동 다음 단계가 아니다)
+
+- 롤백 B 뒤에는 traffic이 안전한 revision에 고정되어, 이후 배포한 revision은 traffic을 받지 않는다.
+- `--to-latest`를 바로 실행하지 않는다. 그 시점 latest가 문제를 일으킨 브랜치 revision이면 롤백이 되돌려진다.
+- 원인을 고친 새 revision을 배포한 뒤, 그 revision의 image digest·환경 변수·secret 참조를 확인하고
+  revision URL로 `/login` smoke를 마친다. 그다음 **별도 승인**을 받아 그 revision 이름을 지정해 옮긴다.
+
+```bash
+gcloud run services update-traffic my-favorite-watch --region asia-northeast3 \
+  --to-revisions <확인한 새 revision>=100
 ```
 
 주의
@@ -506,7 +524,9 @@ gcloud run services update-traffic my-favorite-watch --region asia-northeast3 --
 - 버튼이 `master`에 없으므로 `master`의 다른 기능을 배포하면 버튼이 사라진다. 버튼을 유지하려면
   `master`를 이 브랜치로 가져와(브랜치 쪽 merge/rebase) 배포한다. 브랜치를 `master`로
   병합하지 않는다.
-- `deploy.sh`는 값이 있지만 형식이 틀리면(쉼표 등) 배포를 멈춘다.
+- campaign ID는 `^[a-z][a-z0-9-]{2,40}$` 형식에 `-app`으로 끝나야 한다. 앞뒤 공백·쉼표 등이 있으면
+  앱은 버튼을 숨기고 `deploy.sh`는 배포를 멈춘다. 형식 검사는 manifest 승인 여부를 증명하지 않으므로,
+  설정 전 승인값과 대조한다.
 
 ### gunicorn 구성
 
