@@ -40,6 +40,7 @@ from services.google_credentials import (
     session_payload,
 )
 from services import server_session
+from services.color_world_link import app_playtest_url_from_env
 from services.session_state import auth_timestamp, new_device_id
 from services.user_identity import (
     USER_KEY_VERSION,
@@ -134,6 +135,7 @@ def login():
         "login.html",
         error=message,
         error_code=code if message else "",
+        external_test_url=app_playtest_url_from_env(),
     )
 
 
