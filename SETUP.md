@@ -182,6 +182,7 @@ cp .env.example .env
 | `PRIVACY_CONTACT_EMAIL` | ✅(공개 전) | (빈 값) | `/privacy`, `/terms`에 표시할 문의 이메일 |
 | `SERVICE_URL` | ✅(공개 전) | `PUBLIC_BASE_URL` | `/privacy`, `/terms`에 표시할 서비스 주소 |
 | `POLICY_EFFECTIVE_DATE` | ✅(공개 전) | (빈 값) | `/privacy`, `/terms`의 시행일 |
+| `COLOR_WORLD_APP_CAMPAIGN_ID` | | (빈 값) | 로그인 화면 "컬러로 세계여행 테스트 참여" 버튼의 campaign ID(9.2). 없거나 형식이 틀리면 버튼 숨김. 재빌드 없이 Cloud Run 설정으로 변경 가능 |
 
 `FLASK_SECRET_KEY` 생성:
 
@@ -466,6 +467,46 @@ gcloud builds submit . --project="$PROJECT_ID" --region="$REGION" \
 > ⚠️ 도메인을 바꾸면 `REDIRECT_URI`도 함께 바뀐다.
 > OAuth 클라이언트 등록값 · `scripts/deploy.sh`의 `PUBLIC_BASE_URL` · 실제 접속 주소
 > 셋이 모두 일치해야 한다. 하나라도 어긋나면 로그인 시 `redirect_uri_mismatch`가 발생한다.
+
+### 9.2 컬러로 세계여행 테스트 참여 버튼 (브랜치 배포)
+
+로그인 화면 버튼은 `claude/color-world-app-button` 브랜치에만 있고 `master`에 병합하지
+않는다. 어느 브랜치를 checkout 해서 `scripts/deploy.sh`를 실행하느냐로 운영 화면이
+정해진다. 배포 출력의 `소스:`·`테스트 참여 campaign:` 줄로 확인한다.
+
+| 동작 | 방법 | 재빌드 | 결과 |
+|---|---|---|---|
+| 변경 반영 | 브랜치 checkout, `.env`에 승인된 `COLOR_WORLD_APP_CAMPAIGN_ID` → `bash scripts/deploy.sh` | 예 | 버튼 노출 |
+| 롤백 A (기본) | `master` checkout → `bash scripts/deploy.sh` | 예 | `master` 코드, `--set-env-vars` 전체 교체로 변수 제거 → 버튼 없음 |
+| 롤백 B (가장 빠름) | 직전 revision으로 traffic 이동 (아래) | 아니오 | 직전 revision 그대로 |
+| campaign ID 변경 | `--update-env-vars` (아래) | 아니오 (같은 image로 새 revision) | 링크 ID만 변경 |
+| 버튼만 숨김 | `--remove-env-vars` (아래) | 아니오 | 버튼 없음, 브랜치 코드 유지 |
+
+```bash
+# campaign ID 변경 / 버튼만 숨김 — 브랜치 revision이 서비스 중일 때만
+gcloud run services update my-favorite-watch --region asia-northeast3 \
+  --update-env-vars COLOR_WORLD_APP_CAMPAIGN_ID=<승인된 ID>
+gcloud run services update my-favorite-watch --region asia-northeast3 \
+  --remove-env-vars COLOR_WORLD_APP_CAMPAIGN_ID
+
+# 롤백 B — 직전 revision 확인 후 traffic 이동
+gcloud run revisions list --service my-favorite-watch --region asia-northeast3
+gcloud run services update-traffic my-favorite-watch --region asia-northeast3 \
+  --to-revisions <직전 revision>=100
+# 이후 새 배포가 traffic을 받게 하려면 고정을 푼다
+gcloud run services update-traffic my-favorite-watch --region asia-northeast3 --to-latest
+```
+
+주의
+
+- 모두 운영 쓰기다. 실행 전 승인을 받고, 전후로 image digest·환경 변수·secret 참조·traffic을
+  확인한다. campaign ID를 바꾼 뒤에는 `/login`의 링크에 `campaign` query 하나만 있는지 본다.
+- `deploy.sh`는 `--set-env-vars`로 전체를 교체한다. 런타임에서만 바꾼 campaign ID는 로컬
+  `.env`와 맞추지 않으면 다음 브랜치 배포 때 옛 값으로 돌아간다. 맞출 수 없으면 배포를 멈춘다.
+- 버튼이 `master`에 없으므로 `master`의 다른 기능을 배포하면 버튼이 사라진다. 버튼을 유지하려면
+  `master`를 이 브랜치로 가져와(브랜치 쪽 merge/rebase) 배포한다. 브랜치를 `master`로
+  병합하지 않는다.
+- `deploy.sh`는 값이 있지만 형식이 틀리면(쉼표 등) 배포를 멈춘다.
 
 ### gunicorn 구성
 

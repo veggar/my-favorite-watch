@@ -100,7 +100,24 @@ else
   echo ""
 fi
 
+# 컬러로 세계여행 테스트 참여 링크 campaign ID (TASK-2026-008 CR-03, SETUP.md 9.2)
+# 비어 있으면 로그인 화면 버튼을 숨긴다. 값이 있으면 형식을 확인한다 —
+# 쉼표 등이 섞이면 --set-env-vars 에 다른 변수가 끼어들 수 있으므로 배포를 멈춘다.
+COLOR_WORLD_APP_CAMPAIGN_ID="${COLOR_WORLD_APP_CAMPAIGN_ID:-}"
+if [ -n "$COLOR_WORLD_APP_CAMPAIGN_ID" ]; then
+  if [[ ! "$COLOR_WORLD_APP_CAMPAIGN_ID" =~ ^[a-z][a-z0-9-]{2,40}$ || "$COLOR_WORLD_APP_CAMPAIGN_ID" != *-app ]]; then
+    echo "❌ COLOR_WORLD_APP_CAMPAIGN_ID 형식이 올바르지 않습니다 (^[a-z][a-z0-9-]{2,40}\$, '-app' 으로 끝남)."
+    exit 1
+  fi
+  CAMPAIGN_STATE="${COLOR_WORLD_APP_CAMPAIGN_ID} (버튼 노출)"
+else
+  CAMPAIGN_STATE="미설정 (버튼 숨김)"
+fi
+
+DEPLOY_REF="$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)@$(git -C "$PROJECT_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+
 echo "🚀 Cloud Run 배포 시작"
+echo "   소스:     ${DEPLOY_REF}"
 echo "   프로젝트: $PROJECT"
 echo "   리전:     $REGION"
 echo "   서비스:   $SERVICE"
@@ -108,6 +125,7 @@ echo "   공개 주소: $PUBLIC_BASE_URL"
 echo "   REDIRECT_URI(로컬): $REDIRECT_URI"
 echo "   REDIRECT_URI(배포): $DEPLOY_REDIRECT_URI"
 echo "   HMAC 시크릿: ${USER_KEY_SECRET_NAME}:latest (Secret Manager)"
+echo "   테스트 참여 campaign: ${CAMPAIGN_STATE}"
 echo ""
 
 cd "$PROJECT_ROOT"
@@ -118,7 +136,7 @@ gcloud run deploy "$SERVICE" \
   --region "$REGION" \
   --project "$PROJECT" \
   --allow-unauthenticated \
-  --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET},FLASK_SECRET_KEY=${FLASK_SECRET_KEY},TMDB_API_KEY=${TMDB_API_KEY},REDIRECT_URI=${DEPLOY_REDIRECT_URI},APP_ENV=production,SERVICE_OPERATOR=${SERVICE_OPERATOR},PRIVACY_CONTACT_EMAIL=${PRIVACY_CONTACT_EMAIL},SERVICE_URL=${DEPLOY_SERVICE_URL},POLICY_EFFECTIVE_DATE=${POLICY_EFFECTIVE_DATE},GOOGLE_PICKER_API_KEY=${GOOGLE_PICKER_API_KEY},GOOGLE_CLOUD_PROJECT_NUMBER=${GOOGLE_CLOUD_PROJECT_NUMBER}" \
+  --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET},FLASK_SECRET_KEY=${FLASK_SECRET_KEY},TMDB_API_KEY=${TMDB_API_KEY},REDIRECT_URI=${DEPLOY_REDIRECT_URI},APP_ENV=production,SERVICE_OPERATOR=${SERVICE_OPERATOR},PRIVACY_CONTACT_EMAIL=${PRIVACY_CONTACT_EMAIL},SERVICE_URL=${DEPLOY_SERVICE_URL},POLICY_EFFECTIVE_DATE=${POLICY_EFFECTIVE_DATE},GOOGLE_PICKER_API_KEY=${GOOGLE_PICKER_API_KEY},GOOGLE_CLOUD_PROJECT_NUMBER=${GOOGLE_CLOUD_PROJECT_NUMBER},COLOR_WORLD_APP_CAMPAIGN_ID=${COLOR_WORLD_APP_CAMPAIGN_ID}" \
   --set-secrets "USER_KEY_HMAC_SECRET=${USER_KEY_SECRET_NAME}:latest"
 
 echo ""
