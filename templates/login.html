@@ -33,6 +33,17 @@
       로그인하면 <a href="{{ url_for('site.terms') }}">이용약관</a> 및
       <a href="{{ url_for('site.privacy') }}">개인정보처리방침</a>에 동의하는 것으로 간주됩니다.
     </p>
+
+    {% if external_test_url %}
+    <section class="external-test" aria-labelledby="external-test-title">
+      <h2 id="external-test-title" class="external-test-title">새 퍼즐 게임 테스트</h2>
+      <a class="btn-external-test"
+         href="{{ external_test_url }}"
+         target="_blank" rel="noopener noreferrer"
+         aria-label="컬러로 세계여행 테스트 참여 (새 창에서 열림)">컬러로 세계여행 테스트 참여</a>
+      <p class="external-test-note">약 25분 · 익명 참여 · 새 게임 서비스로 이동</p>
+    </section>
+    {% endif %}
   </div>
 </body>
 </html>
