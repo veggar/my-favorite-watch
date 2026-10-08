@@ -27,8 +27,11 @@ _APP_CHANNEL_SUFFIX = "-app"
 
 
 def build_app_playtest_url(campaign_id: str | None) -> str | None:
-    """기존 앱 채널 campaign ID 로 참여 링크를 만든다. 무효하면 `None`."""
-    value = (campaign_id or "").strip()
+    """기존 앱 채널 campaign ID 로 참여 링크를 만든다. 무효하면 `None`.
+
+    앞뒤 공백도 고치지 않고 거부한다. `scripts/deploy.sh` 형식 검사와 같은 계약이다.
+    """
+    value = campaign_id or ""
     if not _CAMPAIGN_ID_PATTERN.fullmatch(value) or not value.endswith(_APP_CHANNEL_SUFFIX):
         return None
     return f"{PLAYTEST_COLLECT_URL}?{urlencode({'campaign': value})}"

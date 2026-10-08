@@ -31,10 +31,10 @@ def test_url_has_only_campaign_query_and_approved_origin():
     assert parts.fragment == ""
 
 
-def test_surrounding_whitespace_is_trimmed():
-    assert build_app_playtest_url("  f1-formal-1-app\n") == (
-        f"{PLAYTEST_COLLECT_URL}?campaign=f1-formal-1-app"
-    )
+@pytest.mark.parametrize("value", [" f1-formal-1-app", "f1-formal-1-app ", "  f1-formal-1-app\n", "\tf1-formal-1-app"])
+def test_surrounding_whitespace_is_rejected(value):
+    # scripts/deploy.sh 형식 검사와 같은 계약: 앞뒤 공백도 거부한다 (REV-008-CR03-002).
+    assert build_app_playtest_url(value) is None
 
 
 @pytest.mark.parametrize(
