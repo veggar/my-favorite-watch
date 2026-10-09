@@ -146,7 +146,8 @@ def test_login_shows_single_playtest_link_when_campaign_set(client, monkeypatch)
     body = client.get("/login").get_data(as_text=True)
     assert "새 퍼즐 게임 테스트" in body
     assert "컬러로 세계여행 테스트 참여</a>" in body
-    assert "약 25분 · 익명 참여 · 새 게임 서비스로 이동" in body
+    assert "10분 내외 · 익명 참여 · 새 게임 서비스로 이동" in body
+    assert "25분" not in body
 
 
 def test_login_existing_links_unchanged_with_playtest_link(client, monkeypatch):
